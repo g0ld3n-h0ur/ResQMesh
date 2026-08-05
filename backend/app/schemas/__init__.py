@@ -15,6 +15,17 @@ from app.schemas.assignment import (  # noqa: F401
     AssignmentResponse,
     AssignmentUpdate,
 )
+from app.schemas.auth import (  # noqa: F401
+    LoginRequest,
+    RefreshRequest,
+    RegisterCitizenRequest,
+    RegisterGovernmentRequest,
+    RegisterHospitalRequest,
+    RegisterNGORequest,
+    RegisterVolunteerRequest,
+    TokenResponse,
+    UserRegisterBase,
+)
 from app.schemas.base import (  # noqa: F401
     BaseSchema,
     FullResponseSchema,
@@ -123,5 +134,15 @@ __all__ = [
     "NotificationCreate",
     "NotificationUpdate",
     "NotificationResponse",
+    # Auth
+    "TokenResponse",
+    "UserRegisterBase",
+    "RegisterGovernmentRequest",
+    "RegisterNGORequest",
+    "RegisterVolunteerRequest",
+    "RegisterHospitalRequest",
+    "RegisterCitizenRequest",
+    "LoginRequest",
+    "RefreshRequest",
 ]
 
