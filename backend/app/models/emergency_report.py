@@ -83,6 +83,17 @@ class EmergencyReport(BaseModel):
         nullable=True,
         doc="URL to an uploaded image documenting the incident.",
     )
+    disaster_type: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        nullable=True,
+        index=True,
+        doc="Category of the emergency (e.g. 'flood', 'earthquake', 'fire').",
+    )
+    address: Mapped[Optional[str]] = mapped_column(
+        String(500),
+        nullable=True,
+        doc="Human-readable address or landmark of the incident location.",
+    )
     reported_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
