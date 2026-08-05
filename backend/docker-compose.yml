@@ -1,0 +1,55 @@
+version: "3.9"
+
+# ===========================================================================
+# AI Disaster Relief Coordination Platform — Docker Compose
+# ===========================================================================
+# Services:
+#   api       — FastAPI backend (this project)
+# ===========================================================================
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    container_name: disaster_relief_api
+    restart: unless-stopped
+
+    ports:
+      - "8000:8000"
+
+    volumes:
+      # Persist SQLite database across container restarts
+      - sqlite_data:/app/data
+      # Mount source for hot-reload in development (comment out for production)
+      - .:/app
+
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DEBUG: ${DEBUG:-true}
+      SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
+      DATABASE_URL: ${DATABASE_URL:-sqlite:////app/data/disaster_relief.db}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      API_V1_PREFIX: /api/v1
+
+    # Development mode: hot-reload via uvicorn --reload
+    command: >
+      uvicorn app.main:app
+      --host 0.0.0.0
+      --port 8000
+      --reload
+      --log-level info
+
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  sqlite_data:
+    driver: local
