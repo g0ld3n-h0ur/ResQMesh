@@ -5,10 +5,11 @@ Pydantic v2 schemas for the Hospital model.
 
 Schema hierarchy
 ----------------
-HospitalBase     — shared readable fields
-  └── HospitalCreate  — input for POST /hospitals
-  └── HospitalUpdate  — input for PATCH /hospitals/{id}
-HospitalResponse — ORM-compatible full response
+HospitalBase         — shared readable fields
+  └── HospitalCreate — input for POST /hospitals              (Government)
+  └── HospitalUpdate — input for PUT /hospitals/{id}          (Gov + Hospital)
+AvailabilityUpdate   — input for PATCH /hospitals/{id}/availability
+HospitalResponse     — ORM-compatible full response
 
 Validation
 ----------
@@ -39,12 +40,12 @@ class HospitalBase(BaseSchema):
     )
     latitude: Optional[float] = Field(None, description="Geographic latitude (-90 to 90).")
     longitude: Optional[float] = Field(None, description="Geographic longitude (-180 to 180).")
-    available_beds: int = Field(0, ge=0, description="Available general ward beds.")
-    icu_beds: int = Field(0, ge=0, description="Available ICU beds.")
-    ventilators: int = Field(0, ge=0, description="Available mechanical ventilators.")
-    ambulances: int = Field(0, ge=0, description="Operational ambulances.")
-    blood_units: int = Field(0, ge=0, description="Available blood units.")
-    oxygen_units: int = Field(0, ge=0, description="Available oxygen cylinders/units.")
+    available_beds: int = Field(0, ge=0, description="Number of available general ward beds.")
+    icu_beds: int = Field(0, ge=0, description="Number of available ICU beds.")
+    ventilators: int = Field(0, ge=0, description="Number of available mechanical ventilators.")
+    ambulances: int = Field(0, ge=0, description="Number of operational ambulances.")
+    blood_units: int = Field(0, ge=0, description="Number of available blood units.")
+    oxygen_units: int = Field(0, ge=0, description="Number of available oxygen cylinders/units.")
     contact_number: Optional[str] = Field(
         None, max_length=20, description="Primary emergency contact number."
     )
@@ -65,13 +66,17 @@ class HospitalBase(BaseSchema):
 
 
 class HospitalCreate(HospitalBase):
-    """Input schema for registering a new hospital."""
+    """Input schema for registering a new hospital (Government only)."""
 
     pass
 
 
 class HospitalUpdate(BaseSchema):
-    """Partial update schema for PATCH operations."""
+    """
+    Partial update schema for PUT /hospitals/{id}.
+
+    All fields are optional — only provided fields are applied.
+    """
 
     hospital_name: Optional[str] = Field(None, min_length=1, max_length=255)
     latitude: Optional[float] = None
@@ -99,11 +104,41 @@ class HospitalUpdate(BaseSchema):
         return v
 
 
+class AvailabilityUpdate(BaseSchema):
+    """
+    Targeted capacity update for PATCH /hospitals/{id}/availability.
+
+    Designed for real-time field reporting of bed counts, equipment
+    availability, and supply levels.  At least one field must be provided
+    (enforced by the service layer).  All values must be >= 0.
+    """
+
+    available_beds: Optional[int] = Field(
+        None, ge=0, description="Updated count of available general ward beds."
+    )
+    icu_beds: Optional[int] = Field(
+        None, ge=0, description="Updated count of available ICU beds."
+    )
+    ventilators: Optional[int] = Field(
+        None, ge=0, description="Updated count of available mechanical ventilators."
+    )
+    ambulances: Optional[int] = Field(
+        None, ge=0, description="Updated count of operational ambulances."
+    )
+    blood_units: Optional[int] = Field(
+        None, ge=0, description="Updated count of available blood units."
+    )
+    oxygen_units: Optional[int] = Field(
+        None, ge=0, description="Updated count of available oxygen cylinders/units."
+    )
+
+
 class HospitalResponse(FullResponseSchema, HospitalBase):
     """
     ORM-compatible response schema for Hospital.
 
     Inherits id, created_at, updated_at, is_deleted from FullResponseSchema.
+    Inherits all capacity fields from HospitalBase.
     """
 
     pass
