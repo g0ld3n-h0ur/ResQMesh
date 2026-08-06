@@ -60,10 +60,13 @@ logger = logging.getLogger("app.services.resource_service")
 ALLOWED_RESOURCE_TYPES: frozenset[str] = frozenset(
     {
         "food",
+        "food_packet",
         "water",
+        "drinking_water",
         "medicine",
         "blankets",
         "vehicles",
+        "rescue_boat",
         "fuel",
         "medical_kit",
         "generator",

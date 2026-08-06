@@ -43,7 +43,10 @@ class Settings(BaseSettings):
     # CORS — stored as a raw comma-separated string from the env file.
     # Use the `cors_origins_list` property to get the parsed list.
     # ---------------------------------------------------------------------------
-    CORS_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000"
+    CORS_ORIGINS: str = (
+        "http://localhost:5173,http://127.0.0.1:5173,"
+        "http://localhost:3000,http://127.0.0.1:3000"
+    )
 
     @property
     def cors_origins_list(self) -> List[str]:
