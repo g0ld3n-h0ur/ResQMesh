@@ -65,12 +65,33 @@ Install these on the new machine before starting:
 
 | Tool | Version | Download |
 |------|---------|----------|
-| **Python** | 3.12+ | https://www.python.org/downloads/ |
+| **Python** | **exactly 3.12.x** — see warning below | https://www.python.org/downloads/ |
 | **Node.js** | 18+ (20 LTS recommended) | https://nodejs.org/ |
 | **npm** | comes with Node.js | — |
 | **Git** | any recent version | https://git-scm.com/ |
 
 Optional: **Docker Desktop**, if you'd rather run the backend in a container.
+
+> ⚠️ **Use Python 3.12, not whatever is newest.** `scikit-learn==1.5.2` (pinned
+> in `requirements.txt`) has no prebuilt wheel for Python 3.13/3.14 yet, so
+> `pip install` will try to compile it from source and fail with a confusing
+> `meson`/compiler error unless you have a C compiler installed. This has
+> nothing to do with your code — it's purely a missing-wheel problem.
+>
+> **Check what `python` resolves to before creating the venv:**
+> ```bash
+> python --version
+> ```
+> If that's not 3.12.x and you have multiple Python versions installed, target
+> 3.12 explicitly instead of the generic `python -m venv .venv` below:
+> ```powershell
+> # Windows, using the py launcher
+> py -3.12 -m venv .venv
+> ```
+> ```bash
+> # macOS / Linux, if python3.12 is on PATH
+> python3.12 -m venv .venv
+> ```
 
 ---
 
@@ -303,6 +324,14 @@ ResQMesh-main/
 ---
 
 ## 8. Troubleshooting
+
+### `pip install -r requirements.txt` fails with a `meson`/compiler error mentioning scikit-learn
+Your `python` is newer than 3.12 (most likely 3.13 or 3.14) and there's no
+prebuilt scikit-learn wheel for it yet, so pip tries to compile from source
+and fails without a C compiler. Fix: delete the `.venv` you just created and
+recreate it targeting Python 3.12 specifically — see the Prerequisites
+warning above (`py -3.12 -m venv .venv` on Windows, `python3.12 -m venv .venv`
+on macOS/Linux). Verified working end-to-end on 3.12; verified failing on 3.14.
 
 ### AI Prediction page returns 503
 Neither trained model is committed to git — train the one you need:
