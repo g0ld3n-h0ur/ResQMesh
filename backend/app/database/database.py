@@ -20,10 +20,11 @@ from app.core.config import settings
 @event.listens_for(Engine, "connect")
 def _set_sqlite_pragma(dbapi_connection: object, connection_record: object) -> None:
     """Enable WAL mode and foreign key enforcement for every SQLite connection."""
-    cursor = dbapi_connection.cursor()  # type: ignore[attr-defined]
-    cursor.execute("PRAGMA foreign_keys=ON")
-    cursor.execute("PRAGMA journal_mode=WAL")
-    cursor.close()
+    if "sqlite" in settings.DATABASE_URL.lower():
+        cursor = dbapi_connection.cursor()  # type: ignore[attr-defined]
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.close()
 
 
 # ---------------------------------------------------------------------------
