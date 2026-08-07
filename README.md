@@ -1,17 +1,52 @@
 # ResQMesh — Disaster Relief Coordination Platform
 
-ResQMesh is a command portal for coordinating disaster relief operations: tracking shelters, hospitals, and resource inventory; verifying citizen SOS reports; running AI flood-risk predictions; and — its core feature — **computing where limited relief resources should go first**, using explainable scoring rather than manual guesswork.
+ResQMesh is a command portal for coordinating disaster relief operations. It's built for a government-led response team, with NGOs, hospitals, and volunteers plugged into the same system — tracking shelters, hospitals, and resource inventory; verifying citizen SOS reports; and — its core feature — **computing where limited relief resources should go first**, using explainable scoring and two trained ML models rather than manual guesswork.
 
 It's a full-stack demo/hackathon-stage project: a FastAPI + SQLite backend and a React + TypeScript frontend.
 
-## What it actually does
+---
+
+## The problem this solves
+
+During a disaster, relief organizations have to decide, over and over, with incomplete information: *which of these ten affected areas do we help first, and with what?* Normally that's manual — someone reads through reports, eyeballs a map, and makes a judgment call. Decisions get delayed, resources go to whoever asked loudest rather than whoever needs it most, and nobody has a live picture of what's actually happening on the ground beyond what's been typed into the system.
+
+ResQMesh's job is to close that gap: pull in real signals (citizen reports, resource stock, live weather, live earthquake data), turn them into a ranked, explainable answer to "where first," and give every organization type — not just the government coordinator — a shared, live view of who's doing what.
+
+---
+
+## How it works
+
+Everything below is real and running — not a mockup. Here's the mechanism behind each piece:
+
+**Severity / need scoring.** Every active disaster gets a 0–100 need score, recomputed live, from four weighted signals: the government-assessed severity level, how many citizen SOS reports have come in for it, how depleted its already-assigned resources are, and how far along its response lifecycle is (a disaster that's just been reported and has nothing allocated yet scores higher than one that's already being handled). This is not the same number as the manual severity dropdown — it's a second, continuously-updated opinion derived from actual activity in the system. `backend/app/services/need_score_service.py`.
+
+**Urgency + accessibility ranking.** A second ranking blends that need score (60% weight) with real accessibility (40%) — the straight-line distance from the disaster to the nearest registered shelter and hospital, computed with the haversine great-circle formula. Two equally urgent disasters get split by which one responders can actually reach right now. `backend/app/services/priority_service.py`.
+
+**Resource allocation optimization.** When relief stock is sitting unassigned in a depot, the system runs a largest-remainder (Hamilton) apportionment: it weights every active disaster by its need score and splits the stock proportionally, guaranteeing every unit is accounted for and higher-need disasters get a fairer share — without a human doing the math. It only *suggests* — a coordinator reviews and clicks Apply, which calls the same manual allocation endpoint. `backend/app/services/allocation_service.py`.
+
+**External data consolidation.** The backend makes live calls to two independent, free, keyless public APIs — Open-Meteo for current weather at each active disaster's coordinates, and the USGS Earthquake Hazards Program for recent significant earthquakes worldwide — and merges the results with internal disaster records into one feed on the dashboard. This is real third-party data fetched on every request, not seeded or faked. `backend/app/services/external_data_service.py`.
+
+**AI-predicted allocation priority & relief units.** Two scikit-learn models — a RandomForestClassifier and a RandomForestRegressor — were trained on 200,000 real incident records from a hackathon-provided dataset (`disaster_relief_resource_allocation.csv`). Given 18 incident details (population affected, infrastructure damage, accessibility, resource stock on hand, funding available, etc.), they predict a priority label (Low/Medium/High/Critical, with per-class confidence) and a recommended relief-unit count. Test-set accuracy: 75% / 0.72 macro F1 for priority, R²=0.94 for relief units — both measured on 40,000 rows the models never trained on. `backend/ml/train_priority_model.py`, `backend/ml/predict.py`.
+
+**AI flood risk prediction.** A separate RandomForest model estimates flood probability from 8 environmental sensor readings (rainfall, river level, soil moisture, temperature, humidity, prior flood history, elevation, population density). `backend/ml/train_sensor_model.py`.
+
+**Cross-org coordination.** An assignment system links volunteers, NGOs, hospitals, and resources to a specific disaster, each with its own status lifecycle (pending → in progress → completed/cancelled, with role-appropriate permissions on who can transition what). Every organization type shows up in one shared board rather than siloed views. `backend/app/services/assignment_service.py`, `/coordination` page.
+
+**Live dashboard.** Polls every 20 seconds so a coordinator watching the dashboard sees an evolving situation — new reports, changing resource levels, updated rankings — without hitting refresh.
+
+---
+
+## What it actually does (quick reference)
 
 - **Coordination CRUD** — disasters, shelters, hospitals, resource inventory, and citizen emergency (SOS) reports, all role-gated (Government / NGO / Volunteer / Hospital / Citizen).
-- **AI flood prediction** — a trained RandomForest model estimates flood probability from rainfall, river level, soil moisture, and five other sensor inputs.
-- **Need scoring** — every active disaster gets a computed 0–100 need score, blending assessed severity, citizen report volume, resource shortfall, and response lifecycle urgency. Updates as the situation changes — it isn't just the manually-set severity field.
-- **Urgency + accessibility ranking** — disasters are also ranked by combining need with real distance (haversine) to the nearest shelter and hospital, surfacing which urgent situations are actually reachable right now.
-- **Resource allocation optimization** — unassigned resource stock is automatically split across active disasters proportional to need (largest-remainder apportionment), so nothing sits idle and higher-need disasters get a fairer share. Suggestions are reviewed and applied by a human, never auto-committed.
-- **Live dashboard** — polls every 20 seconds so coordinators see an evolving situation without manually refreshing.
+- **AI flood prediction** — see above.
+- **Need scoring** — see above.
+- **Urgency + accessibility ranking** — see above.
+- **Resource allocation optimization** — see above.
+- **Live dashboard** with a live external situational feed.
+- **External data consolidation** — see above.
+- **AI-predicted allocation priority & relief units** — see above.
+- **Cross-org coordination** — see above.
 
 ---
 
@@ -80,9 +115,27 @@ python ml/train_sensor_model.py
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-> **Don't skip `ml/train_sensor_model.py`.** The trained model file isn't committed to git (it's a 30+ MB binary artifact), so the AI Prediction page will return `503` on a fresh clone until you train it locally. It only takes a few seconds and only needs to be run once.
+> **Don't skip `ml/train_sensor_model.py`.** The trained model file isn't committed to git (it's a 30+ MB binary artifact), so the Flood Risk tab will return `503` on a fresh clone until you train it locally. It only takes a few seconds and only needs to be run once.
 
 Confirm it's up: open **http://localhost:8000/health** — you should see `{"status":"healthy"}`.
+
+### Optional: the Resource Priority model
+
+The **Resource Priority** tab (`/prediction`) needs its own trained models, separate from the flood model above. Unlike the flood model, this one requires the real hackathon-provided dataset, which also isn't committed to git (67 MB):
+
+```bash
+# 1. Copy the dataset the hackathon host provided into place:
+cp disaster_relief_resource_allocation.csv backend/ml/datasets/
+
+# 2. Train both models (~30s on 200k rows):
+cd backend
+python ml/train_priority_model.py
+```
+
+This prints real accuracy/F1 and MAE/R² metrics and writes
+`ml/models/priority_classifier.pkl` and `relief_units_regressor.pkl`. Skip this
+if you don't have the dataset — every other feature works fine without it, the
+Resource Priority tab will just 503 until it's trained.
 
 ### What the seed script does
 
@@ -207,7 +260,10 @@ This account's password stays fixed across reseeds so auto-login keeps working. 
 | `/hospitals` | Hospital bed management |
 | `/reports` | Citizen SOS report verification |
 | `/priority` | Computed disaster ranking — severity of need, and urgency + accessibility |
+| `/coordination` | Cross-org assignment board — create and track volunteer/NGO/hospital/resource assignments |
 | `/settings` | Portal preferences (local UI only, no backend) |
+
+The Dashboard (`/`) also shows the live external situational feed (weather + earthquakes), and `/prediction` has two tabs — Flood Risk and Resource Priority (the hackathon-dataset-trained models).
 
 ---
 
@@ -221,6 +277,9 @@ Full interactive reference is at `/docs`, but these are the ones behind the "sma
 | `GET /api/v1/disasters/distribution-priority` | The same, blended with real distance to the nearest shelter/hospital |
 | `GET /api/v1/resources/allocation-suggestions` | Suggested (resource → disaster, quantity) allocations for all unassigned stock, proportional to need |
 | `PATCH /api/v1/resources/{id}/allocate` | Applies an allocation — the endpoint the "Apply" button in the UI actually calls |
+| `GET /api/v1/external-data/situational-feed` | Live weather (per active disaster) + recent earthquakes, merged with internal data |
+| `POST /api/v1/prediction/predict-priority` | AI-predicted allocation priority + recommended relief units (see below) |
+| `GET /api/v1/assignments/` | List/filter cross-org assignments; `POST`/`PATCH .../status` to create and transition them |
 
 ---
 
@@ -230,7 +289,7 @@ Full interactive reference is at `/docs`, but these are the ones behind the "sma
 ResQMesh-main/
 ├── backend/
 │   ├── app/              API routes, services, models, schemas
-│   ├── ml/                Flood prediction model (train_sensor_model.py, predict.py)
+│   ├── ml/                Flood + resource-priority models (train_sensor_model.py, train_priority_model.py, predict.py)
 │   ├── alembic/            Database migrations
 │   └── requirements.txt
 ├── frontend/
@@ -246,10 +305,11 @@ ResQMesh-main/
 ## 8. Troubleshooting
 
 ### AI Prediction page returns 503
-The flood model hasn't been trained locally yet (it's not committed to git). Run:
+Neither trained model is committed to git — train the one you need:
 ```bash
 cd backend
-python ml/train_sensor_model.py
+python ml/train_sensor_model.py      # Flood Risk tab
+python ml/train_priority_model.py    # Resource Priority tab (needs the dataset — see above)
 ```
 Then restart the backend.
 

@@ -267,3 +267,108 @@ def predict_flood(input_data: dict[str, Any]) -> dict[str, Any]:
         "probability": round(probability, 4),
         "model": _FLOOD_MODEL_NAME,
     }
+
+
+# ---------------------------------------------------------------------------
+# Allocation priority + relief units prediction
+#
+# Trained by ml/train_priority_model.py on the hackathon-provided
+# disaster_relief_resource_allocation.csv (200k rows). Both models are full
+# scikit-learn Pipelines (imputation + one-hot encoding + estimator saved
+# together), so inference here is just "build a one-row DataFrame with the
+# training column names and call .predict()" — no hand-rolled encoding to
+# keep in sync with training.
+# ---------------------------------------------------------------------------
+
+from ml.train_priority_model import FEATURE_COLUMNS as _PRIORITY_FEATURE_COLUMNS  # noqa: E402
+
+_PRIORITY_CLASSIFIER_NAME = "priority_classifier"
+_RELIEF_UNITS_REGRESSOR_NAME = "relief_units_regressor"
+
+
+def _build_priority_input_row(input_data: dict[str, Any]) -> Any:
+    import pandas as pd  # noqa: PLC0415
+
+    missing = [col for col in _PRIORITY_FEATURE_COLUMNS if col not in input_data]
+    if missing:
+        raise ValueError(
+            f"Missing required priority model input features: {missing}. "
+            f"Required: {_PRIORITY_FEATURE_COLUMNS}."
+        )
+    row = {col: input_data[col] for col in _PRIORITY_FEATURE_COLUMNS}
+    return pd.DataFrame([row])
+
+
+def predict_allocation_priority(input_data: dict[str, Any]) -> dict[str, Any]:
+    """
+    Predict resource allocation priority (Low/Medium/High/Critical) for a
+    disaster incident, via the RandomForestClassifier trained on the
+    hackathon-provided dataset.
+
+    Returns
+    -------
+    dict with keys:
+        allocation_priority   : str   — predicted class label
+        confidence             : float — probability of the predicted class
+        class_probabilities    : dict  — probability per class
+        model                   : str
+
+    Raises
+    ------
+    FileNotFoundError : model file not found — run ml/train_priority_model.py first.
+    ValueError        : required feature missing from input_data.
+    RuntimeError       : model inference failure.
+    """
+    row = _build_priority_input_row(input_data)
+    model = registry.load(_PRIORITY_CLASSIFIER_NAME)
+
+    try:
+        prediction = model.predict(row)[0]
+        proba = model.predict_proba(row)[0]
+        classes = list(model.classes_)
+        confidence = float(proba[classes.index(prediction)])
+    except Exception as exc:
+        raise RuntimeError(f"Priority classifier inference failed: {exc}") from exc
+
+    logger.info("Priority prediction: %s (confidence=%.4f)", prediction, confidence)
+
+    return {
+        "allocation_priority": str(prediction),
+        "confidence": round(confidence, 4),
+        "class_probabilities": {cls: round(float(p), 4) for cls, p in zip(classes, proba)},
+        "model": _PRIORITY_CLASSIFIER_NAME,
+    }
+
+
+def predict_relief_units(input_data: dict[str, Any]) -> dict[str, Any]:
+    """
+    Predict the recommended number of relief units for a disaster incident,
+    via the RandomForestRegressor trained on the hackathon-provided dataset.
+
+    Returns
+    -------
+    dict with keys:
+        recommended_relief_units : int
+        model                      : str
+
+    Raises
+    ------
+    FileNotFoundError : model file not found — run ml/train_priority_model.py first.
+    ValueError        : required feature missing from input_data.
+    RuntimeError       : model inference failure.
+    """
+    row = _build_priority_input_row(input_data)
+    model = registry.load(_RELIEF_UNITS_REGRESSOR_NAME)
+
+    try:
+        prediction = float(model.predict(row)[0])
+    except Exception as exc:
+        raise RuntimeError(f"Relief units regressor inference failed: {exc}") from exc
+
+    recommended_units = round(max(0.0, prediction))
+    logger.info("Relief units prediction: %s", recommended_units)
+
+    return {
+        "recommended_relief_units": recommended_units,
+        "model": _RELIEF_UNITS_REGRESSOR_NAME,
+    }

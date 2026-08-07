@@ -1,305 +1,191 @@
-# AI Disaster Relief Coordination Platform — Backend
+# ResQMesh Backend
 
-**Version:** 1.0.0  
-**Stack:** Python 3.12 · FastAPI · SQLAlchemy 2.x · Pydantic v2 · SQLite · Alembic · Docker
+FastAPI backend for the ResQMesh disaster relief coordination platform. See the
+[root README](../README.md) for the full picture of what the platform does and
+how to run the whole stack — this file covers the backend specifically.
 
----
-
-## Table of Contents
-
-1. [Overview](#overview)
-2. [Architecture](#architecture)
-3. [Project Structure](#project-structure)
-4. [Quick Start](#quick-start)
-5. [Environment Variables](#environment-variables)
-6. [API Documentation](#api-documentation)
-7. [Database Migrations](#database-migrations)
-8. [Docker](#docker)
-9. [Testing](#testing)
-10. [Development Guidelines](#development-guidelines)
-11. [Roadmap](#roadmap)
+**Stack:** Python 3.12 · FastAPI · SQLAlchemy 2.0 · Pydantic v2 · SQLite · Alembic · scikit-learn · JWT auth
 
 ---
 
-## Overview
+## What's actually in here
 
-Production-ready FastAPI backend for an AI-powered Disaster Relief Coordination Platform.  
-The platform coordinates government agencies, NGOs, volunteers, hospitals, and citizens
-during disaster events using AI-driven predictions and real-time resource management.
-
----
+This is a working backend, not a skeleton — 70 API routes across 16 routers, 15
+service modules, 9 database entities, and two independently trained ML
+pipelines. The sections below describe what exists today.
 
 ## Architecture
 
-The project follows **Clean Architecture** principles with a strict layered separation:
+Layered, with a strict one-way dependency direction:
 
 ```
-┌─────────────────────────────────────┐
-│            API Layer                │  ← FastAPI routes (no business logic)
-├─────────────────────────────────────┤
-│          Service Layer              │  ← All business logic lives here
-├─────────────────────────────────────┤
-│          Database Layer             │  ← SQLAlchemy models & session
-├─────────────────────────────────────┤
-│        Configuration Layer          │  ← Pydantic Settings, env vars
-├─────────────────────────────────────┤
-│          Utility Layer              │  ← Helpers, constants, response builders
-├─────────────────────────────────────┤
-│            ML Layer                 │  ← scikit-learn inference (ml/)
-└─────────────────────────────────────┘
+API layer (app/api/v1/)        FastAPI routes — request/response only, no business logic
+    │
+Service layer (app/services/)  All business logic, validation, and error translation
+    │
+Model layer (app/models/)      SQLAlchemy ORM entities
+    │
+Database (app/database/)       Engine, session factory, SQLite
 ```
 
-**Key principles:**
-- Routes call services — never the database directly.
-- Services call models — never routes.
-- Dependency injection via `fastapi.Depends`.
-- No circular imports.
-- All imports use the `app.` package prefix.
+- Routes call services; services call the ORM. Routes never touch the database directly.
+- Every write path validates via a Pydantic schema (`app/schemas/`) before it reaches a service.
+- Auth/RBAC is dependency-injected (`app/core/permissions.py`) — role checks live in the route signature, not scattered through handler bodies.
+- ML inference is a separate concern entirely (`ml/`), called by services but with no FastAPI/DB knowledge of its own.
 
----
-
-## Project Structure
+## Project structure
 
 ```
 backend/
 ├── app/
-│   ├── api/
-│   │   └── v1/
-│   │       ├── auth.py            # Authentication endpoints
-│   │       ├── government.py      # Government portal
-│   │       ├── ngo.py             # NGO portal
-│   │       ├── volunteer.py       # Volunteer management
-│   │       ├── hospital.py        # Hospital staff portal
-│   │       ├── citizen.py         # Citizen self-service
-│   │       ├── disasters.py       # Disaster lifecycle management
-│   │       ├── reports.py         # Field incident reports
-│   │       ├── prediction.py      # AI prediction endpoints
-│   │       ├── dashboard.py       # Analytics dashboard
-│   │       ├── resources.py       # Resource inventory
-│   │       ├── shelters.py        # Shelter management
-│   │       ├── hospitals.py       # Hospital registry
-│   │       └── notifications.py   # Alert broadcasting
+│   ├── api/v1/                 16 routers — see "API surface" below
 │   ├── core/
-│   │   ├── config.py              # Pydantic Settings
-│   │   ├── security.py            # JWT & password hashing
-│   │   ├── roles.py               # UserRole enum
-│   │   └── permissions.py         # RBAC dependency factories
+│   │   ├── config.py            Pydantic Settings (reads .env)
+│   │   ├── security.py          JWT + bcrypt password hashing
+│   │   ├── roles.py              Role hierarchy
+│   │   └── permissions.py        require_role() dependency factory + named aliases
 │   ├── database/
-│   │   ├── database.py            # Engine & DeclarativeBase
-│   │   └── session.py             # Session factory & get_db()
+│   │   ├── database.py           Engine + declarative Base
+│   │   ├── session.py            SessionLocal + get_db() dependency
+│   │   └── seed.py                Demo data seeding (see root README)
+│   ├── dependencies/auth.py     get_current_user / get_current_active_user
 │   ├── middleware/
-│   │   └── logging.py             # Structured request logging
-│   ├── models/                    # SQLAlchemy models (Phase 2)
-│   ├── schemas/                   # Pydantic schemas (Phase 2)
-│   ├── services/                  # Business logic services (Phase 2)
+│   │   ├── logging.py            Structured request/response access logs
+│   │   └── rate_limit.py          In-memory rate limiting (login, public SOS submit)
+│   ├── models/                  9 SQLAlchemy entities — see "Data model" below
+│   ├── schemas/                 Pydantic request/response schemas, one file per domain
+│   ├── services/                15 modules — all business logic lives here
 │   ├── utils/
-│   │   ├── constants.py           # App-wide constants
-│   │   ├── helpers.py             # Pure utility functions
-│   │   └── response.py            # Standard response envelope
-│   └── main.py                    # FastAPI app factory & system endpoints
+│   │   ├── constants.py          Tags, pagination defaults
+│   │   ├── response.py           Standard {success, message, data, errors} envelope
+│   │   └── geo.py                 Haversine distance
+│   └── main.py                  App factory, middleware/router registration, lifespan
 ├── ml/
-│   └── predict.py                 # ML inference skeleton (Phase 3)
-├── tests/                         # Test suite (Phase 2+)
-├── alembic/                       # Migration environment (init separately)
-├── alembic.ini
+│   ├── predict.py                ModelRegistry (lazy-load + cache) + all inference functions
+│   ├── train_sensor_model.py     Trains the flood-risk model (synthetic data, generated in-script)
+│   ├── train_priority_model.py   Trains the priority/relief-units models (real hackathon dataset)
+│   ├── datasets/                  Gitignored — drop the hackathon CSV here before training
+│   └── models/                    Gitignored — trained .pkl files land here
+├── alembic/                      Migration environment
+├── tests/                        Stub only — no test coverage yet (see "Testing" below)
 ├── requirements.txt
-├── Dockerfile
-├── docker-compose.yml
-├── .env.example
-└── .gitignore
+├── Dockerfile / docker-compose.yml
+└── .env.example
 ```
 
----
+## Data model
 
-## Quick Start
+9 core entities (`app/models/`), all soft-delete-aware (`is_deleted` flag, never hard-deleted):
 
-### Prerequisites
+| Entity | Purpose |
+|---|---|
+| `User` | One of 5 roles: government, ngo, volunteer, hospital, citizen. bcrypt-hashed password. |
+| `Disaster` | The central entity — every other module hangs off a disaster. |
+| `Resource` | Relief inventory item (food, water, medical kits, generators…) with total/available quantity. |
+| `Shelter` | Physical facility with capacity + live occupancy. |
+| `Hospital` | Medical facility with bed/ICU/ambulance/blood/oxygen capacity. |
+| `EmergencyReport` | Citizen-submitted SOS incident; anonymous submission allowed. |
+| `Assignment` | Links a volunteer, NGO, hospital, *or* resource to a disaster with a status lifecycle — the cross-org coordination mechanism. |
+| `Notification` | Role- or user-targeted alert. |
+| `Prediction` | Stored AI prediction output tied to a disaster. |
 
-- Python 3.12+
-- pip
-- (Optional) Docker & Docker Compose
+## API surface
 
-### 1. Clone and navigate
+Full interactive reference at `/docs` (Swagger) or `/redoc` once the server is running.
+Routers, by prefix:
 
-```bash
-git clone <repository-url>
-cd AI-Disaster-Relief-Coordination-Platform/backend
-```
+| Prefix | Tag | Notes |
+|---|---|---|
+| `/auth` | Authentication | Login (OAuth2 password flow → JWT), register per role, refresh, me |
+| `/disasters` | Disasters | CRUD + search + `need-scores` + `distribution-priority` |
+| `/resources` | Resources | CRUD + allocate/release + `allocation-suggestions` |
+| `/shelters` | Shelters | CRUD + check-in/check-out |
+| `/hospitals` | Hospitals | CRUD + bed availability updates |
+| `/reports` | Reports | CRUD + public `/emergency` submission + verify |
+| `/assignments` | Volunteer¹ | Cross-org assignment CRUD + status transitions |
+| `/dashboard` | Dashboard | Aggregated KPI/statistics endpoints |
+| `/notifications` | Notifications | CRUD + mark-read |
+| `/prediction` | AI Prediction | `/predict` (flood) + `/predict-priority` (allocation priority/relief units) |
+| `/external-data` | External Data | `/situational-feed` — live weather + earthquakes |
+| `/users` | Users | Minimal role-filtered user directory, for assignee pickers |
+| `/government`, `/ngo`, `/hospital`, `/citizens` | — | Registered, tagged, and empty — role-portal stubs, no real endpoints yet |
 
-### 2. Create a virtual environment
+¹ `assignments.py`'s router lives in `app/api/v1/volunteer.py` for historical reasons — the tag says "Volunteer" but the endpoints serve Government/NGO/Volunteer alike.
+
+## The ML subsystem
+
+Two independent, unrelated pipelines share the `ml/` directory and the same
+`ModelRegistry` loader pattern (lazy-load from disk on first request, cached
+in memory for the process lifetime):
+
+**Flood risk** (`train_sensor_model.py` → `flood_model.pkl`) — a
+`RandomForestRegressor` trained on 10,000 rows of synthetic sensor data
+generated by a physics-inspired formula (not real historical records). Takes
+8 environmental inputs, outputs a flood probability and risk tier.
+
+**Allocation priority + relief units** (`train_priority_model.py` →
+`priority_classifier.pkl` + `relief_units_regressor.pkl`) — a
+`RandomForestClassifier` and `RandomForestRegressor`, both full scikit-learn
+`Pipeline`s (imputation + one-hot encoding + estimator saved together, so
+inference never has to hand-roll encoding logic), trained on 200,000 real
+incident records from a hackathon-provided dataset. Neither model file nor
+the training dataset is committed to git — see the root README for how to
+train them locally.
+
+## Setup / running
+
+See the root README's "Backend setup" section for the full walkthrough
+(venv, dependencies, `.env`, seeding, training the ML models). Short version:
 
 ```bash
 python -m venv .venv
-
-# Windows
-.venv\Scripts\activate
-
-# macOS / Linux
-source .venv/bin/activate
-```
-
-### 3. Install dependencies
-
-```bash
+source .venv/bin/activate        # or .venv\Scripts\Activate.ps1 on Windows
 pip install -r requirements.txt
-```
-
-### 4. Configure environment
-
-```bash
 cp .env.example .env
-# Edit .env with your values
+python -m app.database.seed
+python ml/train_sensor_model.py
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### 5. Initialise Alembic migrations
+## Environment variables
+
+| Variable | Default | Notes |
+|---|---|---|
+| `ENVIRONMENT` | `development` | |
+| `DEBUG` | `true` | Enables SQLAlchemy query echo |
+| `DATABASE_URL` | `sqlite:///./disaster_relief.db` | |
+| `SECRET_KEY` | *(placeholder)* | JWT signing secret — startup logs a warning if left unchanged |
+| `ALGORITHM` | `HS256` | |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `30` | |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | `7` | |
+| `CORS_ORIGINS` | `http://localhost:5173,...` | Comma-separated |
+| `LOG_LEVEL` | `INFO` | |
+| `API_V1_PREFIX` | `/api/v1` | |
+| `ML_MODEL_PATH` | `ml/models` | |
+
+## Database migrations
 
 ```bash
-alembic init alembic
-# Then configure alembic/env.py to import app.database.database.Base and use settings.DATABASE_URL
-alembic revision --autogenerate -m "initial"
-alembic upgrade head
-```
-
-### 6. Run the development server
-
-```bash
-uvicorn app.main:app --reload
-```
-
-The API is now available at:
-
-| Endpoint            | Description              |
-|---------------------|--------------------------|
-| `GET /`             | Platform metadata        |
-| `GET /health`       | Health check             |
-| `GET /docs`         | Swagger UI               |
-| `GET /redoc`        | ReDoc                    |
-| `GET /openapi.json` | OpenAPI schema           |
-
----
-
-## Environment Variables
-
-| Variable                      | Default                            | Description                              |
-|-------------------------------|------------------------------------|------------------------------------------|
-| `ENVIRONMENT`                 | `development`                      | Runtime environment                      |
-| `DEBUG`                       | `true`                             | Enable SQLAlchemy query echo             |
-| `DATABASE_URL`                | `sqlite:///./disaster_relief.db`   | SQLAlchemy connection string             |
-| `SECRET_KEY`                  | *(must be changed)*                | JWT signing secret                       |
-| `ALGORITHM`                   | `HS256`                            | JWT algorithm                            |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | `30`                               | Access token TTL                         |
-| `REFRESH_TOKEN_EXPIRE_DAYS`   | `7`                                | Refresh token TTL                        |
-| `CORS_ORIGINS`                | `http://localhost:3000`            | Comma-separated allowed CORS origins     |
-| `LOG_LEVEL`                   | `INFO`                             | Python logging level                     |
-| `API_V1_PREFIX`               | `/api/v1`                          | Global API version prefix                |
-| `ML_MODEL_PATH`               | `ml/models`                        | Directory for serialised ML models       |
-
----
-
-## API Documentation
-
-Once the server is running, visit:
-
-- **Swagger UI:** [http://localhost:8000/docs](http://localhost:8000/docs)
-- **ReDoc:**       [http://localhost:8000/redoc](http://localhost:8000/redoc)
-- **OpenAPI JSON:**[http://localhost:8000/openapi.json](http://localhost:8000/openapi.json)
-
-All endpoints are grouped by the tags below:
-
-| Tag               | Prefix                       |
-|-------------------|------------------------------|
-| Authentication    | `/api/v1/auth`               |
-| Government        | `/api/v1/government`         |
-| NGO               | `/api/v1/ngo`                |
-| Volunteer         | `/api/v1/volunteers`         |
-| Hospital          | `/api/v1/hospital`           |
-| Citizen           | `/api/v1/citizens`           |
-| Disasters         | `/api/v1/disasters`          |
-| Reports           | `/api/v1/reports`            |
-| AI Prediction     | `/api/v1/prediction`         |
-| Dashboard         | `/api/v1/dashboard`          |
-| Resources         | `/api/v1/resources`          |
-| Shelters          | `/api/v1/shelters`           |
-| Hospitals         | `/api/v1/hospitals`          |
-| Notifications     | `/api/v1/notifications`      |
-
----
-
-## Database Migrations
-
-This project uses **Alembic** for schema migrations.
-
-```bash
-# Create a new migration
 alembic revision --autogenerate -m "describe change"
-
-# Apply all pending migrations
 alembic upgrade head
-
-# Rollback one migration
 alembic downgrade -1
-
-# Show migration history
-alembic history --verbose
 ```
-
-> **Note:** After initialising Alembic (`alembic init alembic`), update
-> `alembic/env.py` to import `app.database.database.Base` as `target_metadata`
-> and read `DATABASE_URL` from `app.core.config.settings`.
-
----
 
 ## Docker
-
-### Development (hot-reload)
 
 ```bash
 docker compose up --build
 ```
 
-### Production build
-
-```bash
-docker compose -f docker-compose.yml up --build -d
-```
-
-The API will be available at `http://localhost:8000`.
-
----
-
 ## Testing
 
-```bash
-# Run all tests
-pytest
+`tests/` is currently a stub (`__init__.py` only) — `pytest`, `pytest-asyncio`,
+and `httpx` are pinned as dependencies but no test suite has been written yet.
+This is an honest gap, not an oversight to gloss over.
 
-# Run with verbose output
-pytest -v
+## Known limitations
 
-# Run with coverage report
-pytest --cov=app --cov-report=html
-```
-
----
-
-## Development Guidelines
-
-1. **Routes call services** — never access the DB directly from a route.
-2. **Services call repositories / ORM** — never return SQLAlchemy ORM objects to routes.
-3. **Use `Depends(get_db)`** for database session injection.
-4. **Use `app.core.config.settings`** — never use `os.environ` directly.
-5. **Use `app.utils.response`** — always return responses via the standard envelope helpers.
-6. **No circular imports** — if module A imports module B, module B must not import module A.
-7. **All imports must use** `from app.` prefix (no relative imports outside packages).
-
----
-
-## Roadmap
-
-| Phase | Description                                               | Status      |
-|-------|-----------------------------------------------------------|-------------|
-| 1     | Project skeleton, architecture, routing, DevOps           | ✅ Complete  |
-| 2     | SQLAlchemy models, Pydantic schemas, service layer, auth  | 🔜 Planned  |
-| 3     | ML model training, inference pipeline, prediction API     | 🔜 Planned  |
-| 4     | Real-time WebSocket notifications, task queues            | 🔜 Planned  |
-| 5     | Frontend integration, end-to-end testing, deployment      | 🔜 Planned  |
+- Blocking synchronous DB calls happen inside `async def` route handlers throughout — fine at demo traffic, would stall the event loop under real concurrent load.
+- No eager-loading (`selectinload`/`joinedload`) on some relationship-heavy queries — N+1 risk on larger datasets.
+- Rate limiting is in-process memory, not distributed — fine for a single instance, not for a multi-worker deployment.
+- The four role-portal stub routers (`government.py`, `ngo.py`, `hospital.py`, `citizen.py`) are registered and tagged but have zero real endpoints.
