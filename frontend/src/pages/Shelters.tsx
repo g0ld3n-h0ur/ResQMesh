@@ -11,7 +11,7 @@ import {
   AlertTriangle,
   CheckCircle2
 } from "lucide-react";
-import { api, unwrapList } from "../lib/api";
+import { api, unwrapList, formatApiError } from "../lib/api";
 
 interface Shelter {
   id: string;
@@ -21,8 +21,8 @@ interface Shelter {
   contact_number: string;
   district: string;
   state: string;
-  latitude: number;
-  longitude: number;
+  latitude: number | null;
+  longitude: number | null;
 }
 
 export const Shelters: React.FC = () => {
@@ -50,9 +50,9 @@ export const Shelters: React.FC = () => {
       setSelectedShelterId(null);
       setTimeout(() => setSuccessMsg(null), 3000);
     },
-    onError: (err: any) => {
+    onError: (err: unknown) => {
       console.error(err);
-      setErrorMsg(err.response?.data?.detail || "Failed to check in evacuees. Capacity limit exceeded?");
+      setErrorMsg(formatApiError(err, "Failed to check in evacuees. Capacity limit exceeded?"));
       setTimeout(() => setErrorMsg(null), 4000);
     }
   });
@@ -69,9 +69,9 @@ export const Shelters: React.FC = () => {
       setSelectedShelterId(null);
       setTimeout(() => setSuccessMsg(null), 3000);
     },
-    onError: (err: any) => {
+    onError: (err: unknown) => {
       console.error(err);
-      setErrorMsg(err.response?.data?.detail || "Failed to check out evacuees.");
+      setErrorMsg(formatApiError(err, "Failed to check out evacuees."));
       setTimeout(() => setErrorMsg(null), 4000);
     }
   });

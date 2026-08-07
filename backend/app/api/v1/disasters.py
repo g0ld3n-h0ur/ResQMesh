@@ -46,7 +46,7 @@ from app.database.session import get_db
 from app.models.enums import DisasterSeverity, DisasterStatus
 from app.schemas.disaster import DisasterCreate, DisasterResponse, DisasterUpdate
 from app.schemas.patch import DisasterStatusPatch, SeverityPatch
-from app.services import disaster_service
+from app.services import disaster_service, need_score_service, priority_service
 from app.utils.constants import (
     API_V1_TAG_DISASTERS,
     DEFAULT_PAGE,
@@ -156,6 +156,70 @@ async def search_disasters(
         page=page,
         page_size=page_size,
         message=f"Search returned {total} result(s).",
+    )
+
+
+@router.get(
+    "/need-scores",
+    summary="Rank active disasters by computed need score",
+    description="""
+Compute and rank all active disasters by a composite **need score** (0-100).
+
+The score blends four signals: the government-assessed severity, the volume
+of citizen emergency reports linked to the disaster, how depleted its
+assigned resources are, and how early/stalled it is in the response
+lifecycle. Each disaster's response includes a `breakdown` showing every
+component's contribution, so the ranking is fully explainable.
+
+Resolved disasters are excluded by default — pass `include_resolved=true`
+to include them (they will always score at or near the bottom).
+
+No authentication required — read-only, useful to every role for
+prioritising where to act next.
+    """,
+)
+async def get_need_scores(
+    db: Annotated[Session, Depends(get_db)],
+    include_resolved: bool = Query(
+        False,
+        description="Include RESOLVED disasters in the ranking (they score lowest).",
+    ),
+) -> Any:
+    ranked = need_score_service.rank_disasters_by_need(db, include_resolved=include_resolved)
+    return success_response(
+        data=[item.model_dump(mode="json") for item in ranked],
+        message=f"Computed need scores for {len(ranked)} disaster(s).",
+    )
+
+
+@router.get(
+    "/distribution-priority",
+    summary="Rank active disasters by urgency + accessibility",
+    description="""
+Compute and rank all active disasters by a **distribution priority score**
+that combines urgency (the same need score as `/disasters/need-scores`,
+weight 0.6) with **accessibility** (straight-line proximity to the nearest
+registered shelter and hospital, weight 0.4).
+
+This directly answers "where should limited relief resources go first,
+given both how badly they're needed and how quickly we can actually get
+them there." Each response includes the nearest shelter/hospital and their
+distances so the ranking is fully explainable.
+
+No authentication required — read-only.
+    """,
+)
+async def get_distribution_priority(
+    db: Annotated[Session, Depends(get_db)],
+    include_resolved: bool = Query(
+        False,
+        description="Include RESOLVED disasters in the ranking.",
+    ),
+) -> Any:
+    ranked = priority_service.rank_by_distribution_priority(db, include_resolved=include_resolved)
+    return success_response(
+        data=[item.model_dump(mode="json") for item in ranked],
+        message=f"Computed distribution priority for {len(ranked)} disaster(s).",
     )
 
 

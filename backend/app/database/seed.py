@@ -28,6 +28,8 @@ from __future__ import annotations
 
 import argparse
 import logging
+import secrets
+import string
 import sys
 import uuid
 from datetime import datetime, timezone
@@ -73,6 +75,21 @@ _pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 def _hash(plain: str) -> str:
     return _pwd_context.hash(plain)
+
+
+def _generate_password() -> str:
+    """Generate a random password satisfying the app's complexity policy
+    (>=8 chars, upper, lower, digit, special)."""
+    required = [
+        secrets.choice(string.ascii_lowercase),
+        secrets.choice(string.ascii_uppercase),
+        secrets.choice(string.digits),
+        secrets.choice("!@#$%^&*"),
+    ]
+    pool = string.ascii_letters + string.digits + "!@#$%^&*"
+    required += [secrets.choice(pool) for _ in range(8)]
+    secrets.SystemRandom().shuffle(required)
+    return "".join(required)
 
 
 # ---------------------------------------------------------------------------
@@ -148,6 +165,12 @@ def seed_users(db: Session) -> dict[str, User]:
         },
     ]
 
+    # The government admin account keeps a fixed password: it's used by the
+    # frontend's auto-login and documented in the README as the primary demo
+    # login, so it must stay predictable. Every other seeded account gets a
+    # random password printed to the console below.
+    generated_passwords: dict[str, str] = {}
+
     for defn in definitions:
         key: str = defn.pop("key")  # type: ignore[assignment]
         if _exists(db, User, email=defn["email"]):
@@ -155,9 +178,15 @@ def seed_users(db: Session) -> dict[str, User]:
             users[key] = db.query(User).filter_by(email=defn["email"]).one()
             continue
 
+        if key == "government":
+            plain_password = "ResQMesh@2024!"
+        else:
+            plain_password = _generate_password()
+            generated_passwords[defn["email"]] = plain_password
+
         user = User(
             **defn,  # type: ignore[arg-type]
-            password_hash=_hash("ResQMesh@2024!"),
+            password_hash=_hash(plain_password),
             country="India",
             is_active=True,
         )
@@ -167,6 +196,14 @@ def seed_users(db: Session) -> dict[str, User]:
         log.info("  Created user: %s (%s)", user.full_name, user.role)
 
     db.commit()
+
+    if generated_passwords:
+        log.info("=" * 70)
+        log.info("Generated demo account passwords (shown once, not stored anywhere):")
+        for email, pw in generated_passwords.items():
+            log.info("  %s : %s", email, pw)
+        log.info("=" * 70)
+
     return users
 
 

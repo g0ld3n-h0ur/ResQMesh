@@ -1,12 +1,14 @@
 import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
-import { 
-  Package, 
-  Plus, 
-  MapPin, 
+import {
+  Package,
+  Plus,
+  MapPin,
   CheckCircle,
-  AlertTriangle
+  AlertTriangle,
+  Sparkles,
+  ArrowRight
 } from "lucide-react";
 import { api, formatApiError, unwrapList } from "../lib/api";
 
@@ -17,6 +19,19 @@ interface Resource {
   available_quantity: number;
   location: string | null;
   status: string;
+}
+
+interface AllocationSuggestion {
+  resource_id: string;
+  resource_type: string;
+  resource_location: string | null;
+  source_available_quantity: number;
+  disaster_id: string;
+  disaster_title: string;
+  disaster_need_rank: number;
+  disaster_need_score: number;
+  suggested_quantity: number;
+  rationale: string;
 }
 
 const RESOURCE_UNITS: Record<string, string> = {
@@ -64,6 +79,38 @@ export const ResourceAllocation: React.FC = () => {
   const { data: resources = [], isLoading, isError } = useQuery<Resource[]>({
     queryKey: ["resources-list"],
     queryFn: async () => unwrapList<Resource>(await api.get("/resources/")),
+  });
+
+  const {
+    data: suggestions = [],
+    isLoading: isSuggestionsLoading,
+    isError: isSuggestionsError,
+  } = useQuery<AllocationSuggestion[]>({
+    queryKey: ["allocation-suggestions"],
+    queryFn: async () => unwrapList<AllocationSuggestion>(await api.get("/resources/allocation-suggestions")),
+  });
+
+  const [applyError, setApplyError] = useState<string | null>(null);
+  const [appliedKeys, setAppliedKeys] = useState<Set<string>>(new Set());
+
+  const applyMutation = useMutation({
+    mutationFn: async (suggestion: AllocationSuggestion) => {
+      const res = await api.patch(`/resources/${suggestion.resource_id}/allocate`, {
+        disaster_id: suggestion.disaster_id,
+        quantity_to_allocate: suggestion.suggested_quantity,
+      });
+      return res.data;
+    },
+    onSuccess: (_, suggestion) => {
+      queryClient.invalidateQueries({ queryKey: ["resources-list"] });
+      queryClient.invalidateQueries({ queryKey: ["allocation-suggestions"] });
+      setAppliedKeys((prev) => new Set(prev).add(`${suggestion.resource_id}:${suggestion.disaster_id}`));
+    },
+    onError: (err: unknown) => {
+      console.error(err);
+      setApplyError(formatApiError(err, "Failed to apply suggested allocation."));
+      setTimeout(() => setApplyError(null), 5000);
+    },
   });
 
   const createMutation = useMutation({
@@ -261,6 +308,83 @@ export const ResourceAllocation: React.FC = () => {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Suggested Allocations — optimization output */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
+        <div className="flex items-start space-x-2">
+          <div className="p-2 bg-indigo-50 border border-indigo-100 rounded-xl text-indigo-600 flex-shrink-0">
+            <Sparkles className="w-4 h-4" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-slate-800">Suggested Allocations</h3>
+            <p className="text-xs text-slate-400">
+              Unassigned stock split across active disasters, weighted by computed need score. Review and apply.
+            </p>
+          </div>
+        </div>
+
+        {applyError && (
+          <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-center space-x-2">
+            <AlertTriangle className="w-4 h-4 text-rose-600 flex-shrink-0" />
+            <span>{applyError}</span>
+          </div>
+        )}
+
+        {isSuggestionsLoading && (
+          <div className="space-y-2">
+            {[...Array(2)].map((_, i) => (
+              <div key={i} className="h-16 bg-slate-100 animate-pulse rounded-xl" />
+            ))}
+          </div>
+        )}
+
+        {isSuggestionsError && (
+          <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl">
+            Error computing allocation suggestions.
+          </div>
+        )}
+
+        {!isSuggestionsLoading && !isSuggestionsError && (
+          suggestions.length > 0 ? (
+            <div className="space-y-2.5">
+              {suggestions.map((s) => {
+                const key = `${s.resource_id}:${s.disaster_id}`;
+                const applied = appliedKeys.has(key);
+                return (
+                  <div
+                    key={key}
+                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 bg-slate-50 border border-slate-100 rounded-xl"
+                  >
+                    <div className="flex items-center space-x-2 text-xs">
+                      <span className="px-2 py-0.5 rounded bg-white border border-slate-200 font-bold text-slate-700 uppercase tracking-wider text-[10px]">
+                        {s.suggested_quantity} {formatResourceLabel(s.resource_type)}
+                      </span>
+                      <ArrowRight className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                      <span className="font-semibold text-slate-700">{s.disaster_title}</span>
+                      <span className="text-[10px] text-slate-400 font-semibold">
+                        (need #{s.disaster_need_rank}, score {s.disaster_need_score})
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => applyMutation.mutate(s)}
+                      disabled={applied || applyMutation.isPending}
+                      className={`flex-shrink-0 px-3 py-1.5 text-[10px] font-bold rounded-lg shadow-sm transition ${
+                        applied
+                          ? "bg-emerald-50 border border-emerald-200 text-emerald-700 cursor-default"
+                          : "bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50"
+                      }`}
+                    >
+                      {applied ? "Applied" : "Apply"}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-xs text-slate-400">No unassigned stock to suggest right now — everything available is already committed.</p>
+          )
+        )}
+      </div>
 
       {isLoading && (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">

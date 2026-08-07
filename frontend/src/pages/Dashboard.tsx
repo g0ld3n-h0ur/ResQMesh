@@ -17,7 +17,12 @@ import {
   MapPin,
   Clock,
   CheckCircle2,
-  HelpCircle
+  HelpCircle,
+  CloudRain,
+  Thermometer,
+  Wind,
+  Waves,
+  Globe
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -81,8 +86,8 @@ interface EmergencyReport {
   reporter_name: string;
   phone: string;
   disaster_type: string;
-  latitude: number;
-  longitude: number;
+  latitude: number | null;
+  longitude: number | null;
   address: string;
   description: string;
   is_verified: boolean;
@@ -97,72 +102,142 @@ interface NotificationData {
   created_at: string;
 }
 
+interface WeatherSnapshot {
+  temperature_c: number | null;
+  humidity_pct: number | null;
+  precipitation_mm: number | null;
+  rain_mm: number | null;
+  wind_speed_kmh: number | null;
+  observed_at: string | null;
+  source: string;
+}
+
+interface DisasterWeatherContext {
+  disaster_id: string;
+  title: string;
+  district: string | null;
+  state: string | null;
+  weather: WeatherSnapshot | null;
+  weather_available: boolean;
+}
+
+interface EarthquakeEvent {
+  id: string | null;
+  place: string | null;
+  magnitude: number | null;
+  time: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  url: string | null;
+  source: string;
+}
+
+interface SituationalFeed {
+  disasters: DisasterWeatherContext[];
+  recent_earthquakes: EarthquakeEvent[];
+  earthquakes_available: boolean;
+  generated_at: string;
+}
+
+// Dashboard polls every 20s so coordinators see evolving situations without
+// manually refreshing. Paused automatically while the tab is in the background.
+const LIVE_REFRESH_MS = 20_000;
+
 export const Dashboard: React.FC = () => {
   // 1. Fetch KPI Summary
-  const { 
-    data: summary, 
-    isLoading: isSummaryLoading, 
+  const {
+    data: summary,
+    isLoading: isSummaryLoading,
     isError: isSummaryError,
-    refetch: refetchSummary 
+    refetch: refetchSummary,
+    dataUpdatedAt,
   } = useQuery<SummaryData>({
     queryKey: ["dashboard-summary"],
     queryFn: async () => unwrapEnvelope<SummaryData>(await api.get("/dashboard/summary")),
+    refetchInterval: LIVE_REFRESH_MS,
   });
 
   // 2. Fetch Severity Statistics
-  const { 
-    data: stats, 
-    isLoading: isStatsLoading, 
+  const {
+    data: stats,
+    isLoading: isStatsLoading,
     isError: isStatsError,
     refetch: refetchStats
   } = useQuery<StatisticsData>({
     queryKey: ["dashboard-statistics"],
     queryFn: async () => unwrapEnvelope<StatisticsData>(await api.get("/dashboard/statistics")),
+    refetchInterval: LIVE_REFRESH_MS,
   });
 
   // 3. Fetch Shelters
-  const { 
-    data: sheltersRes, 
-    isLoading: isSheltersLoading, 
+  const {
+    data: sheltersRes,
+    isLoading: isSheltersLoading,
     isError: isSheltersError,
     refetch: refetchShelters
   } = useQuery<ShelterData[]>({
     queryKey: ["shelters-list"],
     queryFn: async () => unwrapList<ShelterData>(await api.get("/shelters/")),
+    refetchInterval: LIVE_REFRESH_MS,
   });
 
   // 4. Fetch Ranked Hospitals
-  const { 
-    data: hospitalsRes, 
-    isLoading: isHospitalsLoading, 
+  const {
+    data: hospitalsRes,
+    isLoading: isHospitalsLoading,
     isError: isHospitalsError,
     refetch: refetchHospitals
   } = useQuery<HospitalData[]>({
     queryKey: ["dashboard-hospitals"],
     queryFn: async () => unwrapDashboardHospitals<HospitalData>(await api.get("/dashboard/hospitals")),
+    refetchInterval: LIVE_REFRESH_MS,
   });
 
   // 5. Fetch Distress Reports
-  const { 
-    data: reportsRes, 
-    isLoading: isReportsLoading, 
+  const {
+    data: reportsRes,
+    isLoading: isReportsLoading,
     isError: isReportsError,
     refetch: refetchReports
   } = useQuery<EmergencyReport[]>({
     queryKey: ["reports-list"],
     queryFn: async () => unwrapList<EmergencyReport>(await api.get("/reports/")),
+    refetchInterval: LIVE_REFRESH_MS,
   });
 
   // 6. Fetch Notifications
-  const { 
-    data: notificationsRes, 
-    isLoading: isNotificationsLoading, 
+  const {
+    data: notificationsRes,
+    isLoading: isNotificationsLoading,
     isError: isNotificationsError,
     refetch: refetchNotifications
   } = useQuery<NotificationData[]>({
     queryKey: ["notifications-list"],
     queryFn: async () => unwrapList<NotificationData>(await api.get("/notifications/")),
+    refetchInterval: LIVE_REFRESH_MS,
   });
+
+  // 7. Fetch external situational feed (live weather + earthquakes) — kept out of
+  // the main isLoading/isError aggregate since it depends on third-party APIs
+  // that shouldn't block the rest of the dashboard from rendering.
+  const {
+    data: situationalFeed,
+    isLoading: isFeedLoading,
+    isError: isFeedError,
+    refetch: refetchFeed,
+  } = useQuery<SituationalFeed>({
+    queryKey: ["situational-feed"],
+    queryFn: async () => unwrapEnvelope<SituationalFeed>(await api.get("/external-data/situational-feed")),
+    refetchInterval: 60_000,
+  });
+
+  // Ticks once a second purely to force a re-render so "updated Xs ago" stays fresh.
+  const [, forceTick] = React.useState(0);
+  React.useEffect(() => {
+    const id = setInterval(() => forceTick((n) => n + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const secondsSinceUpdate = dataUpdatedAt ? Math.max(0, Math.round((Date.now() - dataUpdatedAt) / 1000)) : null;
 
   const refetchAll = () => {
     refetchSummary();
@@ -171,6 +246,7 @@ export const Dashboard: React.FC = () => {
     refetchHospitals();
     refetchReports();
     refetchNotifications();
+    refetchFeed();
   };
 
   const isLoading = 
@@ -261,7 +337,11 @@ export const Dashboard: React.FC = () => {
         <div className="flex items-center space-x-3">
           <span className="flex items-center space-x-1.5 px-3 py-1 bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-semibold rounded-full">
             <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping" />
-            <span>Systems Online</span>
+            <span>
+              {secondsSinceUpdate === null
+                ? "Systems Online"
+                : `Live · updated ${secondsSinceUpdate}s ago`}
+            </span>
           </span>
           <button 
             onClick={refetchAll} 
@@ -493,6 +573,108 @@ export const Dashboard: React.FC = () => {
                 )}
               </div>
             </div>
+          </motion.div>
+
+          {/* 3b. External Situational Feed — live weather + earthquakes from independent public sources */}
+          <motion.div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4" variants={itemVariants}>
+            <div className="flex items-center space-x-2">
+              <div className="p-2 bg-cyan-50 border border-cyan-100 rounded-xl text-cyan-600 flex-shrink-0">
+                <Globe className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-slate-800">External Situational Feed</h3>
+                <p className="text-xs text-slate-400">
+                  Live data from independent public sources — Open-Meteo (weather) and USGS (earthquakes) —
+                  merged with internal disaster records.
+                </p>
+              </div>
+            </div>
+
+            {isFeedLoading && (
+              <div className="grid gap-3 md:grid-cols-2">
+                {[...Array(2)].map((_, i) => (
+                  <div key={i} className="h-32 bg-slate-100 animate-pulse rounded-xl" />
+                ))}
+              </div>
+            )}
+
+            {isFeedError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl">
+                Could not reach the external data service.
+              </div>
+            )}
+
+            {!isFeedLoading && !isFeedError && situationalFeed && (
+              <div className="grid gap-4 md:grid-cols-2">
+                {/* Live weather at disaster sites */}
+                <div className="space-y-2">
+                  <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center space-x-1">
+                    <CloudRain className="w-3.5 h-3.5" />
+                    <span>Live Weather at Disaster Sites</span>
+                  </h4>
+                  {situationalFeed.disasters.length > 0 ? (
+                    <div className="space-y-2">
+                      {situationalFeed.disasters.map((d) => (
+                        <div key={d.disaster_id} className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-semibold text-slate-700 truncate pr-2">{d.title}</span>
+                            {!d.weather_available && (
+                              <span className="text-[9px] text-slate-400 font-semibold flex-shrink-0">unavailable</span>
+                            )}
+                          </div>
+                          {d.weather_available && d.weather && (
+                            <div className="flex items-center flex-wrap gap-x-3 gap-y-1 mt-1.5 text-[10px] text-slate-500 font-semibold">
+                              <span className="flex items-center space-x-1">
+                                <Thermometer className="w-3 h-3 text-orange-400" />
+                                <span>{d.weather.temperature_c}°C</span>
+                              </span>
+                              <span className="flex items-center space-x-1">
+                                <Waves className="w-3 h-3 text-cyan-400" />
+                                <span>{d.weather.humidity_pct}% humidity</span>
+                              </span>
+                              <span className="flex items-center space-x-1">
+                                <CloudRain className="w-3 h-3 text-blue-400" />
+                                <span>{d.weather.rain_mm ?? 0}mm rain</span>
+                              </span>
+                              <span className="flex items-center space-x-1">
+                                <Wind className="w-3 h-3 text-slate-400" />
+                                <span>{d.weather.wind_speed_kmh} km/h</span>
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-400">No active disasters to check weather for.</p>
+                  )}
+                </div>
+
+                {/* Recent significant earthquakes */}
+                <div className="space-y-2">
+                  <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center space-x-1">
+                    <Activity className="w-3.5 h-3.5" />
+                    <span>Recent Significant Earthquakes (USGS, mag 4.5+)</span>
+                  </h4>
+                  {!situationalFeed.earthquakes_available ? (
+                    <p className="text-xs text-slate-400">USGS feed currently unavailable.</p>
+                  ) : situationalFeed.recent_earthquakes.length > 0 ? (
+                    <div className="space-y-1.5 max-h-[220px] overflow-y-auto pr-1">
+                      {situationalFeed.recent_earthquakes.map((eq) => (
+                        <div key={eq.id} className="flex items-center justify-between p-2.5 bg-slate-50 border border-slate-100 rounded-xl text-[10px]">
+                          <span className="text-slate-600 font-medium truncate pr-2">{eq.place}</span>
+                          <span className="flex-shrink-0 px-1.5 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-800 font-bold">
+                            M{eq.magnitude?.toFixed(1)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-400">No significant earthquakes in the last 7 days.</p>
+                  )}
+                </div>
+              </div>
+            )}
           </motion.div>
 
           {/* 4. Reports Table and System Notifications */}

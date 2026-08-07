@@ -24,6 +24,8 @@ API_V1_TAG_RESOURCES = "Resources"
 API_V1_TAG_SHELTERS = "Shelters"
 API_V1_TAG_HOSPITALS = "Hospitals"
 API_V1_TAG_NOTIFICATIONS = "Notifications"
+API_V1_TAG_EXTERNAL_DATA = "External Data"
+API_V1_TAG_USERS = "Users"
 
 # ---------------------------------------------------------------------------
 # Disaster severity levels

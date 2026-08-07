@@ -64,34 +64,47 @@ export const api = axios.create({
 
 /**
  * Proactively registers/logs in the admin credentials on the backend.
- * Caches the token to localStorage.
+ * Caches the token to localStorage. Concurrent callers share one in-flight
+ * request instead of each firing their own /auth/login call.
  */
+let loginInFlight: Promise<string | null> | null = null;
+
 export async function loginAndGetToken(): Promise<string | null> {
   const cachedToken = localStorage.getItem("resqmesh_token");
   if (cachedToken) {
     return cachedToken;
   }
 
-  try {
-    const params = new URLSearchParams();
-    params.append("username", "gov.admin@tn.gov.in");
-    params.append("password", "ResQMesh@2024!");
-
-    const response = await axios.post(`${API_BASE_URL}/auth/login`, params, {
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-    });
-
-    const token = response.data.access_token;
-    if (token) {
-      localStorage.setItem("resqmesh_token", token);
-      return token;
-    }
-  } catch (error) {
-    console.error("Auto-login failed:", error);
+  if (loginInFlight) {
+    return loginInFlight;
   }
-  return null;
+
+  loginInFlight = (async () => {
+    try {
+      const params = new URLSearchParams();
+      params.append("username", "gov.admin@tn.gov.in");
+      params.append("password", "ResQMesh@2024!");
+
+      const response = await axios.post(`${API_BASE_URL}/auth/login`, params, {
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+      });
+
+      const token = response.data.access_token;
+      if (token) {
+        localStorage.setItem("resqmesh_token", token);
+        return token;
+      }
+    } catch (error) {
+      console.error("Auto-login failed:", error);
+    } finally {
+      loginInFlight = null;
+    }
+    return null;
+  })();
+
+  return loginInFlight;
 }
 
 // Request interceptor to attach JWT token to outgoing requests

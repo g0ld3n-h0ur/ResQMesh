@@ -10,15 +10,15 @@ import {
   Link as LinkIcon,
   X
 } from "lucide-react";
-import { api, unwrapList } from "../lib/api";
+import { api, unwrapList, formatApiError } from "../lib/api";
 
 interface EmergencyReport {
   id: string;
   reporter_name: string;
   phone: string;
   disaster_type: string;
-  latitude: number;
-  longitude: number;
+  latitude: number | null;
+  longitude: number | null;
   address: string;
   description: string;
   is_verified: boolean;
@@ -54,10 +54,9 @@ export const Reports: React.FC = () => {
 
   // 3. Verify Report Mutation
   const verifyMutation = useMutation({
-    mutationFn: async ({ id, linked_disaster_id }: { id: string; linked_disaster_id: string }) => {
+    mutationFn: async ({ id, disaster_id }: { id: string; disaster_id: string }) => {
       const res = await api.patch(`/reports/${id}/verify`, {
-        is_verified: true,
-        linked_disaster_id
+        disaster_id
       });
       return res.data;
     },
@@ -68,9 +67,9 @@ export const Reports: React.FC = () => {
       setSelectedDisasterId("");
       setTimeout(() => setSuccessMsg(null), 3000);
     },
-    onError: (err: any) => {
+    onError: (err: unknown) => {
       console.error(err);
-      setErrorMsg(err.response?.data?.detail || "Failed to verify SOS report.");
+      setErrorMsg(formatApiError(err, "Failed to verify SOS report."));
       setTimeout(() => setErrorMsg(null), 4000);
     }
   });
@@ -80,7 +79,7 @@ export const Reports: React.FC = () => {
     if (!selectedDisasterId) return;
     verifyMutation.mutate({
       id: reportId,
-      linked_disaster_id: selectedDisasterId
+      disaster_id: selectedDisasterId
     });
   };
 
@@ -171,7 +170,9 @@ export const Reports: React.FC = () => {
                       <span className="font-semibold text-slate-700 truncate max-w-[150px]">{report.address}</span>
                     </span>
                     <span className="text-[10px] font-medium pl-5">
-                      GPS: {report.latitude.toFixed(4)}, {report.longitude.toFixed(4)}
+                      GPS: {report.latitude != null && report.longitude != null
+                        ? `${report.latitude.toFixed(4)}, ${report.longitude.toFixed(4)}`
+                        : "Not provided"}
                     </span>
                   </div>
 

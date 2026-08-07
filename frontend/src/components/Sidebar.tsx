@@ -1,12 +1,14 @@
 import React from "react";
 import { Link, useLocation } from "react-router-dom";
-import { 
-  LayoutDashboard, 
-  TrendingUp, 
-  Package, 
-  Home, 
-  HeartPulse, 
-  FileText, 
+import {
+  LayoutDashboard,
+  TrendingUp,
+  Package,
+  Home,
+  HeartPulse,
+  FileText,
+  Gauge,
+  Link2,
   Settings,
   X
 } from "lucide-react";
@@ -26,6 +28,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     { name: "Shelters", path: "/shelters", icon: Home },
     { name: "Hospitals", path: "/hospitals", icon: HeartPulse },
     { name: "Reports", path: "/reports", icon: FileText },
+    { name: "Priority Ranking", path: "/priority", icon: Gauge },
+    { name: "Coordination", path: "/coordination", icon: Link2 },
     { name: "Settings", path: "/settings", icon: Settings },
   ];
 

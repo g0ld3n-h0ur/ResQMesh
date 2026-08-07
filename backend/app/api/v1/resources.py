@@ -49,7 +49,8 @@ from app.schemas.resource import (
     ResourceResponse,
     ResourceUpdate,
 )
-from app.services import resource_service
+from app.schemas.allocation_suggestion import AllocationSuggestionItem
+from app.services import allocation_service, resource_service
 from app.utils.constants import (
     API_V1_TAG_RESOURCES,
     DEFAULT_PAGE,
@@ -414,6 +415,36 @@ async def list_resources(
         page=page,
         page_size=page_size,
         message=f"Retrieved {len(resources)} of {total} resource(s).",
+    )
+
+
+@router.get(
+    "/allocation-suggestions",
+    summary="Suggest how to distribute unassigned resources across active disasters",
+    description="""
+Compute suggested allocations for every currently **unassigned, available**
+resource depot row, splitting each row's stock across active disasters by
+a weighted-proportional (largest-remainder) apportionment of their need
+scores — see `/disasters/need-scores` for how need is computed.
+
+Every unit of unassigned stock is accounted for in the suggestions (nothing
+is left unaccounted), and higher-need disasters receive a proportionally
+larger share. This endpoint only computes suggestions — nothing is written
+to the database. Apply a suggestion by calling
+`PATCH /resources/{resource_id}/allocate` with the suggested quantity and
+disaster_id.
+
+Requires: **Government** or **NGO** role (same as manual allocation).
+    """,
+)
+async def get_allocation_suggestions(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: _RequireGovOrNGO,
+) -> Any:
+    suggestions: list[AllocationSuggestionItem] = allocation_service.suggest_allocations(db)
+    return success_response(
+        data=[item.model_dump(mode="json") for item in suggestions],
+        message=f"Computed {len(suggestions)} allocation suggestion(s).",
     )
 
 

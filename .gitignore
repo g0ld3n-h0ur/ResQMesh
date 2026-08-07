@@ -35,6 +35,7 @@ ENV/
 Thumbs.db
 .vscode/
 .idea/
+.claude/
 
 # Logs
 *.log

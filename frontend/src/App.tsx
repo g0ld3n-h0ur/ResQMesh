@@ -8,6 +8,8 @@ import { ResourceAllocation } from "./pages/ResourceAllocation"
 import { Shelters } from "./pages/Shelters"
 import { Hospitals } from "./pages/Hospitals"
 import { Reports } from "./pages/Reports"
+import { PriorityRanking } from "./pages/PriorityRanking"
+import { Coordination } from "./pages/Coordination"
 import { Settings } from "./pages/Settings"
 
 const queryClient = new QueryClient({
@@ -32,6 +34,8 @@ function App() {
               <Route path="shelters" element={<Shelters />} />
               <Route path="hospitals" element={<Hospitals />} />
               <Route path="reports" element={<Reports />} />
+              <Route path="priority" element={<PriorityRanking />} />
+              <Route path="coordination" element={<Coordination />} />
               <Route path="settings" element={<Settings />} />
             </Route>
           </Routes>

@@ -24,6 +24,7 @@ from app.api.v1 import (
     citizen,
     dashboard,
     disasters,
+    external_data,
     government,
     hospital,
     hospitals,
@@ -33,10 +34,12 @@ from app.api.v1 import (
     reports,
     resources,
     shelters,
+    users,
     volunteer,
 )
 from app.core.config import settings
 from app.middleware.logging import RequestLoggingMiddleware
+from app.middleware.rate_limit import RateLimitMiddleware
 
 # ---------------------------------------------------------------------------
 # Logging configuration
@@ -94,6 +97,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         settings.APP_VERSION,
         settings.ENVIRONMENT,
     )
+    if settings.SECRET_KEY == "change-this-secret-key-before-deploying":
+        logger.warning(
+            "SECRET_KEY is still set to the default placeholder value. "
+            "JWTs can be forged by anyone who has seen this repo. "
+            "Set a unique SECRET_KEY in backend/.env before deploying anywhere real."
+        )
     yield
     logger.info("Shutting down %s", settings.APP_NAME)
 
@@ -132,6 +141,8 @@ def create_application() -> FastAPI:
             {"name": "Shelters", "description": "Emergency shelter management."},
             {"name": "Hospitals", "description": "Hospital registry and capacity coordination."},
             {"name": "Notifications", "description": "Alert and notification broadcasting."},
+            {"name": "External Data", "description": "Live third-party data (weather, earthquakes) merged with internal disaster records."},
+            {"name": "Users", "description": "Minimal user directory for assignment pickers."},
         ],
     )
 
@@ -147,9 +158,10 @@ def create_application() -> FastAPI:
     )
 
     # -----------------------------------------------------------------------
-    # Custom request / response logging middleware
+    # Custom request / response logging + rate limiting middleware
     # -----------------------------------------------------------------------
     application.add_middleware(RequestLoggingMiddleware)
+    application.add_middleware(RateLimitMiddleware)
 
     # -----------------------------------------------------------------------
     # v1 Routers
@@ -170,6 +182,8 @@ def create_application() -> FastAPI:
     application.include_router(shelters.router, prefix=api_prefix)
     application.include_router(hospitals.router, prefix=api_prefix)
     application.include_router(notifications.router, prefix=api_prefix)
+    application.include_router(external_data.router, prefix=api_prefix)
+    application.include_router(users.router, prefix=api_prefix)
 
     return application
 

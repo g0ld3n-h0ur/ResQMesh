@@ -9,13 +9,13 @@ import {
   CheckCircle2,
   Edit2
 } from "lucide-react";
-import { api, unwrapList } from "../lib/api";
+import { api, unwrapList, formatApiError } from "../lib/api";
 
 interface Hospital {
   id: string;
   hospital_name: string;
-  latitude: number;
-  longitude: number;
+  latitude: number | null;
+  longitude: number | null;
   available_beds: number;
   icu_beds: number;
   ventilators: number;
@@ -51,9 +51,9 @@ export const Hospitals: React.FC = () => {
       setEditingId(null);
       setTimeout(() => setSuccessMsg(null), 3000);
     },
-    onError: (err: any) => {
+    onError: (err: unknown) => {
       console.error(err);
-      setErrorMsg(err.response?.data?.detail || "Failed to update hospital metrics.");
+      setErrorMsg(formatApiError(err, "Failed to update hospital metrics."));
       setTimeout(() => setErrorMsg(null), 4000);
     }
   });
@@ -220,7 +220,9 @@ export const Hospitals: React.FC = () => {
                   <div className="flex items-center justify-between text-[9px] text-slate-400 font-semibold pt-3.5 border-t border-slate-50">
                     <span className="flex items-center space-x-1">
                       <MapPin className="w-3 h-3" />
-                      <span>{hospital.latitude.toFixed(3)}, {hospital.longitude.toFixed(3)}</span>
+                      <span>{hospital.latitude != null && hospital.longitude != null
+                        ? `${hospital.latitude.toFixed(3)}, ${hospital.longitude.toFixed(3)}`
+                        : "No GPS data"}</span>
                     </span>
                     <span className="flex items-center space-x-1">
                       <Phone className="w-3 h-3" />
