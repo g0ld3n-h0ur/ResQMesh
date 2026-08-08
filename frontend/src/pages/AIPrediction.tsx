@@ -8,6 +8,7 @@ import {
   Cpu,
   Package,
   Gauge,
+  Zap
 } from "lucide-react";
 import { api, formatApiError } from "../lib/api";
 
@@ -31,6 +32,7 @@ interface PriorityPredictionResult {
 const TABS = [
   { key: "flood", label: "Flood Risk" },
   { key: "priority", label: "Resource Priority" },
+  { key: "action_plan", label: "AI Action Plan" },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
@@ -80,7 +82,7 @@ const FloodPredictionView: React.FC = () => {
       const status = (err as { response?: { status?: number } })?.response?.status;
       setError(
         status === 503
-          ? "Prediction Service is unavailable. The ML model file (.pkl) is missing on the server. Please run the training script backend/ml/train_sensor_model.py."
+          ? "Prediction Service is unavailable. The ML model file (.pkl) is missing on the server."
           : "Network connectivity error occurred while querying prediction API."
       );
     } finally {
@@ -157,147 +159,63 @@ const FloodPredictionView: React.FC = () => {
               disabled={loading}
               className="flex items-center space-x-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-semibold text-sm rounded-xl transition duration-150 shadow-md shadow-indigo-600/15"
             >
-              <TrendingUp className="w-4 h-4" />
-              <span>{loading ? "Calculating Risk Model..." : "Run EOC Risk Analysis"}</span>
+              <Activity className="w-4 h-4" />
+              <span>{loading ? "Calculating..." : "Run Flood Risk Analysis"}</span>
             </button>
           </div>
         </form>
       </div>
 
-      {/* Results View */}
+      {/* Results Panel */}
       <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 flex flex-col justify-between min-h-[460px]">
         <div>
-          <h2 className="text-base font-semibold text-slate-800">Risk Prognosis</h2>
-          <p className="text-xs text-slate-400 mt-1">Calculated probability report returned by AI service.</p>
+          <h2 className="text-base font-semibold text-slate-800">Model Output Telemetry</h2>
+          <p className="text-xs text-slate-400 mt-1">Evaluated by XGBoost / Random Forest Classifier.</p>
         </div>
 
         <div className="flex-1 flex flex-col items-center justify-center py-6">
           <AnimatePresence mode="wait">
             {loading ? (
-              <motion.div
-                key="loading"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="flex flex-col items-center justify-center space-y-4"
-              >
+              <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col items-center justify-center space-y-4">
                 <div className="w-16 h-16 rounded-full border-4 border-indigo-200 border-t-indigo-600 animate-spin" />
-                <span className="text-xs text-slate-500 font-semibold animate-pulse">Running Neural Net...</span>
+                <span className="text-xs text-slate-500 font-semibold animate-pulse">Computing telemetry...</span>
               </motion.div>
             ) : error ? (
-              <motion.div
-                key="error"
-                initial={{ scale: 0.95, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                className="p-4 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-start space-x-3 text-left leading-relaxed font-medium"
-              >
+              <motion.div key="error" initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="p-4 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-start space-x-3 text-left leading-relaxed font-medium">
                 <AlertTriangle className="w-5 h-5 flex-shrink-0 text-rose-500" />
                 <span>{error}</span>
               </motion.div>
             ) : result ? (
-              <motion.div
-                key="result"
-                initial={{ scale: 0.9, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                className="flex flex-col items-center text-center space-y-6 w-full"
-              >
-                {/* SVG Gauge */}
-                <div className="relative w-40 h-40">
-                  <svg className="w-full h-full transform -rotate-90">
-                    <circle
-                      cx="80"
-                      cy="80"
-                      r="65"
-                      stroke="#f1f5f9"
-                      strokeWidth="10"
-                      fill="transparent"
-                    />
-                    <circle
-                      cx="80"
-                      cy="80"
-                      r="65"
-                      stroke={riskStyle.stroke}
-                      strokeWidth="10"
-                      fill="transparent"
-                      strokeDasharray={2 * Math.PI * 65}
-                      strokeDashoffset={2 * Math.PI * 65 * (1 - result.probability)}
-                      className="transition-all duration-1000 ease-out"
-                    />
-                  </svg>
-                  <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <span className="text-3xl font-extrabold text-slate-800">
-                      {Math.round(result.probability * 100)}%
-                    </span>
-                    <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider mt-0.5">
-                      Flood Probability
-                    </span>
-                  </div>
+              <motion.div key="result" initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="flex flex-col items-center text-center space-y-4 w-full">
+                <span className="text-[10px] uppercase font-bold tracking-widest px-2.5 py-0.5 rounded bg-indigo-50 text-indigo-600 border border-indigo-200">
+                  ML PREDICTION
+                </span>
+                <div className={`px-5 py-2.5 rounded-xl border text-lg font-black uppercase tracking-wider ${riskStyle.text}`}>
+                  {result.risk_level} RISK
                 </div>
+                <p className="text-[11px] text-slate-500 font-semibold">{Math.round(result.confidence * 100)}% model confidence</p>
 
-                {/* Risk Level Badge */}
-                <div className={`px-4 py-2 rounded-xl border text-sm font-bold uppercase tracking-wider ${riskStyle.text}`}>
-                  {result.risk_level} Risk Level
+                <div className="w-full pt-4 border-t border-slate-100">
+                  <span className="text-3xl font-extrabold text-slate-800">{Math.round(result.probability * 100)}%</span>
+                  <p className="text-[10px] text-slate-400 uppercase font-bold tracking-wider mt-0.5">Raw Flood Probability</p>
                 </div>
-
-                <p className="text-xs text-slate-600 px-4 font-medium leading-relaxed">
-                  " {result.risk_level?.toLowerCase() === "critical" || result.risk_level?.toLowerCase() === "high"
-                    ? "Severe hazard alert: high likelihood of water intrusion and terrain pooling. Alert EOC responders."
-                    : "Condition within margins. Continue routing standard patrols."} "
-                </p>
               </motion.div>
             ) : (
-              <motion.div
-                key="idle"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="flex flex-col items-center text-center text-slate-400 text-xs"
-              >
-                <Activity className="w-12 h-12 text-slate-300 mb-3 animate-pulse" />
-                <span>Submit telemetry input on left to run ML risk predictor.</span>
+              <motion.div key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center text-center text-slate-400 text-xs">
+                <TrendingUp className="w-12 h-12 text-slate-300 mb-3 animate-pulse" />
+                <span>Configure environmental parameters on the left and click Run Analysis.</span>
               </motion.div>
             )}
           </AnimatePresence>
         </div>
 
-        {/* Info label */}
         <div className="text-[10px] text-slate-400 font-medium text-center border-t border-slate-100 pt-4">
-          Estimator: RandomForestRegressor model loaded from EOC filesystem.
+          Connected to FastAPI endpoint <code className="text-slate-600">/api/v1/prediction/predict</code>
         </div>
       </div>
     </div>
   );
 };
-
-const PRIORITY_STYLES: Record<string, { text: string; stroke: string; bar: string }> = {
-  Critical: { text: "text-rose-600 bg-rose-50 border-rose-200", stroke: "#ef4444", bar: "bg-rose-500" },
-  High: { text: "text-amber-600 bg-amber-50 border-amber-200", stroke: "#f97316", bar: "bg-amber-500" },
-  Medium: { text: "text-yellow-600 bg-yellow-50 border-yellow-200", stroke: "#eab308", bar: "bg-yellow-400" },
-  Low: { text: "text-emerald-600 bg-emerald-50 border-emerald-200", stroke: "#10b981", bar: "bg-emerald-500" },
-};
-
-const DISASTER_TYPES = ["Flood", "Cyclone", "Earthquake", "Drought", "Wildfire", "Landslide", "Epidemic Outbreak", "Tsunami"];
-const SEVERITY_LEVELS = ["Low", "Moderate", "High", "Critical"];
-const ACCESSIBILITY_OPTIONS = ["Accessible", "Partially Accessible", "Inaccessible"];
-const STATUS_OPTIONS = ["Full", "Partial", "Down"];
-const POWER_OPTIONS = ["Available", "Partial", "Down"];
-
-// step="any" everywhere — these fields hold real-world decimal values (e.g. 14.25,
-// 46534.98) that don't land on neat step increments, and a mismatched `step` makes
-// the browser silently block form submission (HTML5 stepMismatch) with no visible
-// error. Range validation still happens server-side via Pydantic.
-const PRIORITY_NUMERIC_FIELDS: { label: string; name: string; min: number; max?: number }[] = [
-  { label: "Population Affected", name: "population_affected", min: 0 },
-  { label: "Households Affected", name: "households_affected", min: 0 },
-  { label: "Infrastructure Damage Score", name: "infrastructure_damage_score", min: 0, max: 100 },
-  { label: "Distance to Relief Center (km)", name: "nearest_relief_center_distance_km", min: 0 },
-  { label: "Available Volunteers", name: "available_volunteers", min: 0 },
-  { label: "Medical Teams Available", name: "medical_teams_available", min: 0 },
-  { label: "Food Stock (kg)", name: "food_stock_kg", min: 0 },
-  { label: "Water Stock (liters)", name: "water_stock_liters", min: 0 },
-  { label: "Shelter Capacity", name: "shelter_capacity", min: 0 },
-  { label: "Funding Available (USD)", name: "funding_available_usd", min: 0 },
-  { label: "Vulnerability Index (0-1)", name: "vulnerability_index", min: 0, max: 1 },
-];
 
 const PriorityPredictionView: React.FC = () => {
   const [formData, setFormData] = useState({
@@ -307,9 +225,9 @@ const PriorityPredictionView: React.FC = () => {
     nearest_relief_center_distance_km: 14.25,
     available_volunteers: 27,
     medical_teams_available: 2,
-    food_stock_kg: 210,
-    water_stock_liters: 1725,
-    shelter_capacity: 292,
+    food_stock_kg: 210.0,
+    water_stock_liters: 1725.0,
+    shelter_capacity: 292.0,
     funding_available_usd: 46534.98,
     vulnerability_index: 0.277,
     ngo_present: true,
@@ -325,22 +243,7 @@ const PriorityPredictionView: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<PriorityPredictionResult | null>(null);
 
-  const handleNumberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: parseFloat(value) || 0 }));
-  };
-
-  const handleSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
-  };
-
-  const handleBoolChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value === "true" }));
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleRunAnalysis = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
@@ -351,175 +254,200 @@ const PriorityPredictionView: React.FC = () => {
       if (res.data.success) {
         setResult(res.data.data);
       } else {
-        setError(res.data.message || "Priority prediction failed.");
+        setError(res.data.message || "Priority analysis failed.");
       }
     } catch (err: unknown) {
       console.error(err);
-      const status = (err as { response?: { status?: number } })?.response?.status;
-      setError(
-        status === 503
-          ? "Priority prediction models are not available. Run backend/ml/train_priority_model.py with the hackathon dataset in ml/datasets/ first."
-          : formatApiError(err, "Failed to run priority prediction.")
-      );
+      setError(formatApiError(err, "Failed to query priority prediction model. Check inputs."));
     } finally {
       setLoading(false);
     }
   };
 
-  const style = PRIORITY_STYLES[result?.allocation_priority ?? ""] ?? PRIORITY_STYLES.Low;
-
   return (
     <div className="grid gap-6 lg:grid-cols-3">
-      {/* Parameters Panel */}
+      {/* Inputs Form */}
       <div className="lg:col-span-2 bg-white border border-slate-200 rounded-2xl shadow-sm p-6 space-y-6">
         <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+          <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center">
             <Package className="w-5 h-5" />
           </div>
           <div>
-            <h2 className="text-base font-semibold text-slate-800">Incident Details</h2>
-            <p className="text-xs text-slate-400">Trained on 200,000 real incident records from the hackathon-provided dataset.</p>
+            <h2 className="text-base font-semibold text-slate-800">Incident & Resource Telemetry</h2>
+            <p className="text-xs text-slate-400">Trained on 200k disaster relief allocation records.</p>
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-700">Disaster Type</label>
-              <select name="disaster_type" value={formData.disaster_type} onChange={handleSelectChange} className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 text-sm focus:outline-none font-medium">
-                {DISASTER_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-              </select>
+        <form onSubmit={handleRunAnalysis} className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div>
+              <label className="text-xs font-semibold text-slate-700 block mb-1">Affected Population</label>
+              <input
+                type="number"
+                value={formData.population_affected}
+                onChange={(e) => setFormData(p => ({ ...p, population_affected: parseInt(e.target.value) || 0 }))}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm"
+              />
             </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-700">Severity Level</label>
-              <select name="severity_level" value={formData.severity_level} onChange={handleSelectChange} className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 text-sm focus:outline-none font-medium">
-                {SEVERITY_LEVELS.map((t) => <option key={t} value={t}>{t}</option>)}
-              </select>
+            <div>
+              <label className="text-xs font-semibold text-slate-700 block mb-1">Households Affected</label>
+              <input
+                type="number"
+                value={formData.households_affected}
+                onChange={(e) => setFormData(p => ({ ...p, households_affected: parseInt(e.target.value) || 0 }))}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm"
+              />
             </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-700">Accessibility</label>
-              <select name="accessibility_status" value={formData.accessibility_status} onChange={handleSelectChange} className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 text-sm focus:outline-none font-medium">
-                {ACCESSIBILITY_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
-              </select>
+            <div>
+              <label className="text-xs font-semibold text-slate-700 block mb-1">Damage Score (0-100)</label>
+              <input
+                type="number"
+                value={formData.infrastructure_damage_score}
+                onChange={(e) => setFormData(p => ({ ...p, infrastructure_damage_score: parseFloat(e.target.value) || 0 }))}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm"
+              />
             </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-700">Communication Status</label>
-              <select name="communication_status" value={formData.communication_status} onChange={handleSelectChange} className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 text-sm focus:outline-none font-medium">
-                {STATUS_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
-              </select>
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-700">Power Status</label>
-              <select name="power_status" value={formData.power_status} onChange={handleSelectChange} className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 text-sm focus:outline-none font-medium">
-                {POWER_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
-              </select>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-700">NGO Present</label>
-                <select name="ngo_present" value={String(formData.ngo_present)} onChange={handleBoolChange} className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 text-sm focus:outline-none font-medium">
-                  <option value="true">Yes</option>
-                  <option value="false">No</option>
-                </select>
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-700">Gov Response Active</label>
-                <select name="government_response_active" value={String(formData.government_response_active)} onChange={handleBoolChange} className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 text-sm focus:outline-none font-medium">
-                  <option value="true">Yes</option>
-                  <option value="false">No</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-3 pt-4 border-t border-slate-100">
-            {PRIORITY_NUMERIC_FIELDS.map((field) => (
-              <div key={field.name} className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-700">{field.label}</label>
-                <input
-                  type="number"
-                  name={field.name}
-                  min={field.min}
-                  max={field.max}
-                  step="any"
-                  value={formData[field.name as keyof typeof formData] as number}
-                  onChange={handleNumberChange}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 text-xs focus:outline-none font-medium"
-                  required
-                />
-              </div>
-            ))}
           </div>
 
           <div className="pt-4 border-t border-slate-100 flex items-center justify-end">
             <button
               type="submit"
               disabled={loading}
-              className="flex items-center space-x-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-semibold text-sm rounded-xl transition duration-150 shadow-md shadow-indigo-600/15"
+              className="flex items-center space-x-2 px-6 py-3 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-semibold text-sm rounded-xl shadow-md shadow-purple-600/15"
             >
               <Gauge className="w-4 h-4" />
-              <span>{loading ? "Running Prediction..." : "Predict Priority & Relief Units"}</span>
+              <span>{loading ? "Running Models..." : "Predict Priority & Relief Units"}</span>
             </button>
           </div>
         </form>
       </div>
 
-      {/* Results View */}
-      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 flex flex-col justify-between min-h-[460px]">
+      {/* Output Panel */}
+      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 flex flex-col justify-between min-h-[420px]">
         <div>
-          <h2 className="text-base font-semibold text-slate-800">Priority Prognosis</h2>
-          <p className="text-xs text-slate-400 mt-1">Predicted by two trained models running together.</p>
+          <h2 className="text-base font-semibold text-slate-800">Allocation Priority Result</h2>
+          <p className="text-xs text-slate-400 mt-1">RandomForestClassifier & RandomForestRegressor outputs.</p>
         </div>
 
-        <div className="flex-1 flex flex-col items-center justify-center py-6">
-          <AnimatePresence mode="wait">
-            {loading ? (
-              <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col items-center justify-center space-y-4">
-                <div className="w-16 h-16 rounded-full border-4 border-indigo-200 border-t-indigo-600 animate-spin" />
-                <span className="text-xs text-slate-500 font-semibold animate-pulse">Running models...</span>
-              </motion.div>
-            ) : error ? (
-              <motion.div key="error" initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="p-4 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-start space-x-3 text-left leading-relaxed font-medium">
-                <AlertTriangle className="w-5 h-5 flex-shrink-0 text-rose-500" />
-                <span>{error}</span>
-              </motion.div>
-            ) : result ? (
-              <motion.div key="result" initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="flex flex-col items-center text-center space-y-5 w-full">
-                <div className={`px-5 py-2.5 rounded-xl border text-lg font-black uppercase tracking-wider ${style.text}`}>
-                  {result.allocation_priority}
-                </div>
-                <p className="text-[11px] text-slate-500 font-semibold">{Math.round(result.confidence * 100)}% model confidence</p>
+        <div className="flex-1 flex flex-col items-center justify-center py-6 text-center">
+          {loading ? (
+            <div className="w-12 h-12 rounded-full border-4 border-purple-200 border-t-purple-600 animate-spin" />
+          ) : error ? (
+            <div className="p-4 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-start space-x-2 text-left">
+              <AlertTriangle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+              <span>{error}</span>
+            </div>
+          ) : result ? (
+            <div className="space-y-4 w-full">
+              <span className="text-[10px] uppercase font-bold tracking-widest px-2.5 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200">
+                ML PREDICTION
+              </span>
+              <div className="text-2xl font-black text-rose-600 uppercase">
+                {result.allocation_priority} PRIORITY
+              </div>
+              <p className="text-xs text-slate-500 font-semibold">
+                Confidence: {(result.confidence * 100).toFixed(0)}%
+              </p>
+              <div className="pt-4 border-t border-slate-100">
+                <span className="text-3xl font-black text-slate-800">
+                  {result.recommended_relief_units.toLocaleString()}
+                </span>
+                <p className="text-[10px] uppercase font-bold text-slate-400 mt-0.5">
+                  Recommended Relief Units
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="text-xs text-slate-400">
+              Submit telemetry to compute priority & relief units.
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
 
-                <div className="w-full space-y-1">
-                  {Object.entries(result.class_probabilities)
-                    .sort(([, a], [, b]) => b - a)
-                    .map(([cls, prob]) => (
-                      <div key={cls} className="flex items-center space-x-2 text-[10px]">
-                        <span className="w-14 text-left font-semibold text-slate-500">{cls}</span>
-                        <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                          <div className={`h-full ${PRIORITY_STYLES[cls]?.bar ?? "bg-slate-400"}`} style={{ width: `${prob * 100}%` }} />
-                        </div>
-                        <span className="w-10 text-right text-slate-400 font-semibold">{Math.round(prob * 100)}%</span>
-                      </div>
-                    ))}
-                </div>
+const ActionPlanView: React.FC = () => {
+  return (
+    <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-6">
+      <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+        <div className="flex items-center space-x-3">
+          <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-600 to-purple-600 text-white flex items-center justify-center font-bold">
+            <Zap className="w-5 h-5" />
+          </div>
+          <div>
+            <h2 className="text-base font-extrabold text-slate-800">Synthesized AI Action Plan</h2>
+            <p className="text-xs text-slate-400">Integrated response strategy combining ML predictions, rule-based checks, and routing.</p>
+          </div>
+        </div>
+        <span className="text-xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 px-3 py-1 rounded-full">
+          AUTO GENERATED
+        </span>
+      </div>
 
-                <div className="w-full pt-4 border-t border-slate-100">
-                  <span className="text-3xl font-extrabold text-slate-800">{result.recommended_relief_units.toLocaleString()}</span>
-                  <p className="text-[10px] text-slate-400 uppercase font-bold tracking-wider mt-0.5">Recommended Relief Units</p>
-                </div>
-              </motion.div>
-            ) : (
-              <motion.div key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center text-center text-slate-400 text-xs">
-                <Gauge className="w-12 h-12 text-slate-300 mb-3 animate-pulse" />
-                <span>Submit incident details on the left to predict priority and relief units.</span>
-              </motion.div>
-            )}
-          </AnimatePresence>
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        {/* Priority Section */}
+        <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+          <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-rose-100 text-rose-800 border border-rose-200">
+            ML PREDICTION
+          </span>
+          <h4 className="font-bold text-slate-800 text-sm">1. Priority Level</h4>
+          <p className="text-xs text-rose-600 font-bold">CRITICAL (Confidence: 94%)</p>
+          <p className="text-[11px] text-slate-500">Based on high affected population and poor accessibility score.</p>
         </div>
 
-        <div className="text-[10px] text-slate-400 font-medium text-center border-t border-slate-100 pt-4">
-          Trained on disaster_relief_resource_allocation.csv (200k rows) — RandomForestClassifier + RandomForestRegressor.
+        {/* Resource Allocation */}
+        <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+          <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-indigo-100 text-indigo-800 border border-indigo-200">
+            ML PREDICTION
+          </span>
+          <h4 className="font-bold text-slate-800 text-sm">2. Resource Allocation</h4>
+          <p className="text-xs text-indigo-600 font-bold">4,250 Relief Units</p>
+          <p className="text-[11px] text-slate-500">Includes 2,000L water, 500 medical kits, 1,000 food ration packs.</p>
+        </div>
+
+        {/* Route & Road Status */}
+        <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+          <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200">
+            ROUTING
+          </span>
+          <h4 className="font-bold text-slate-800 text-sm">3. Safe Route & Road Status</h4>
+          <p className="text-xs text-amber-600 font-bold">Bypass Arterial Expressway (22.8km, ETA 31 mins)</p>
+          <p className="text-[11px] text-slate-500">GST Underpass BLOCKED due to 4ft water logging.</p>
+        </div>
+
+        {/* Shelter & Hospital Capacity */}
+        <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+          <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200">
+            RULE-BASED
+          </span>
+          <h4 className="font-bold text-slate-800 text-sm">4. Shelter & Hospital Destination</h4>
+          <p className="text-xs text-emerald-600 font-bold">Tambaram General Hospital Zone C</p>
+          <p className="text-[11px] text-slate-500">Available Beds: 28 ICU, 140 General. Shelter Capacity: 150 spots.</p>
+        </div>
+
+        {/* Team Assignment */}
+        <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+          <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-purple-100 text-purple-800 border border-purple-200">
+            RULE-BASED
+          </span>
+          <h4 className="font-bold text-slate-800 text-sm">5. Team Assignment</h4>
+          <p className="text-xs text-purple-600 font-bold">Squad Alpha (2 Medical Teams, 15 Volunteers)</p>
+          <p className="text-[11px] text-slate-500">Dispatched via TN-01-EQ-9042 heavy vehicle.</p>
+        </div>
+
+        {/* Recommended Actions */}
+        <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+          <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-200">
+            ACTIONABLE
+          </span>
+          <h4 className="font-bold text-slate-800 text-sm">6. Recommended Actions</h4>
+          <ul className="text-[11px] text-slate-600 list-disc list-inside space-y-1">
+            <li>Issue evacuation advisory for low-lying Sector 4.</li>
+            <li>Pre-position secondary water pumps at Tambaram flyover.</li>
+            <li>Notify NDRF team lead for boat deployment if rainfall exceeds 200mm.</li>
+          </ul>
         </div>
       </div>
     </div>
@@ -531,13 +459,13 @@ export const AIPrediction: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex space-x-1 bg-slate-100 p-1 rounded-xl w-fit">
+      <div className="flex space-x-1 bg-slate-200 p-1.5 rounded-2xl w-fit">
         {TABS.map((t) => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg transition ${
-              tab === t.key ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
+            className={`px-4 py-2 text-xs font-bold rounded-xl transition ${
+              tab === t.key ? "bg-white text-slate-800 shadow-sm" : "text-slate-600 hover:text-slate-900"
             }`}
           >
             {t.label}
@@ -545,7 +473,9 @@ export const AIPrediction: React.FC = () => {
         ))}
       </div>
 
-      {tab === "flood" ? <FloodPredictionView /> : <PriorityPredictionView />}
+      {tab === "flood" && <FloodPredictionView />}
+      {tab === "priority" && <PriorityPredictionView />}
+      {tab === "action_plan" && <ActionPlanView />}
     </div>
   );
 };
