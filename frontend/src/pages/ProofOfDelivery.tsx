@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { api } from "../lib/api";
 
 interface DeliveryRecord {
   id: string;
@@ -62,7 +63,19 @@ const INITIAL_DELIVERIES: DeliveryRecord[] = [
 export const ProofOfDelivery: React.FC = () => {
   const [deliveries, setDeliveries] = useState<DeliveryRecord[]>(INITIAL_DELIVERIES);
 
-  const handleVerify = (id: string) => {
+  const handleVerify = async (id: string) => {
+    const target = deliveries.find(d => d.id === id);
+    if (target) {
+      try {
+        await api.post("/csr/proof-of-delivery", {
+          dispatched_quantity: target.dispatched_qty,
+          received_quantity: target.received_qty,
+          verified_quantity: target.received_qty,
+        });
+      } catch (err) {
+        console.warn("Backend sync failed for proof of delivery", err);
+      }
+    }
     setDeliveries(prev =>
       prev.map(d => {
         if (d.id === id) {
@@ -70,6 +83,7 @@ export const ProofOfDelivery: React.FC = () => {
             ...d,
             status: "VERIFIED",
             verified_qty: d.received_qty,
+            discrepancy_qty: 0,
           };
         }
         return d;

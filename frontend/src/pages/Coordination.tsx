@@ -111,12 +111,12 @@ export const Coordination: React.FC = () => {
 
   const { data: volunteers = [] } = useQuery<PublicUser[]>({
     queryKey: ["users-list", "volunteer"],
-    queryFn: async () => unwrapList<PublicUser>(await api.get("/users/", { params: { role: "volunteer" } })),
+    queryFn: async () => unwrapList<PublicUser>(await api.get("/users/", { params: { role: "VOLUNTEER" } })),
   });
 
   const { data: ngos = [] } = useQuery<PublicUser[]>({
     queryKey: ["users-list", "ngo"],
-    queryFn: async () => unwrapList<PublicUser>(await api.get("/users/", { params: { role: "ngo" } })),
+    queryFn: async () => unwrapList<PublicUser>(await api.get("/users/", { params: { role: "NGO" } })),
   });
 
   const { data: hospitals = [] } = useQuery<Hospital[]>({

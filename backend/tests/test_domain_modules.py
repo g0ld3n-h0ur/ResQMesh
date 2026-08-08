@@ -11,15 +11,22 @@ from app.main import app
 client = TestClient(app)
 
 
-def get_auth_token():
-    email = "officer.domain@disaster.gov.in"
+@pytest.fixture(scope="module")
+def auth_headers():
+    email = "gov.admin@tn.gov.in"
     password = "SecurePassword123!"
 
-    # Register government user
+    login_res = client.post("/api/v1/auth/login", data={"username": email, "password": password})
+    if login_res.status_code == 200:
+        token = login_res.json().get("access_token")
+        return {"Authorization": f"Bearer {token}"}
+
+    import time
+    unique_email = f"officer.{int(time.time())}@disaster.gov.in"
     reg_payload = {
         "full_name": "Domain Test Officer",
-        "email": email,
-        "phone": "+919876543210",
+        "email": unique_email,
+        "phone": f"+9198{int(time.time()) % 100000000:08d}",
         "password": password,
         "organization_name": "State Response Force",
         "district": "Chennai",
@@ -28,23 +35,18 @@ def get_auth_token():
     }
     client.post("/api/v1/auth/register/government", json=reg_payload)
 
-    # Login
-    login_payload = {
-        "username": email,
-        "password": password,
-    }
-    login_res = client.post("/api/v1/auth/login", data=login_payload)
+    login_res = client.post("/api/v1/auth/login", data={"username": unique_email, "password": password})
     if login_res.status_code == 200:
-        return login_res.json().get("access_token")
-    return None
+        token = login_res.json().get("access_token")
+        return {"Authorization": f"Bearer {token}"}
+    return {}
 
 
-def test_auth_register_and_login():
-    token = get_auth_token()
-    assert token is not None
+def test_auth_register_and_login(auth_headers):
+    assert "Authorization" in auth_headers
 
     # Test GET /auth/me
-    me_res = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
+    me_res = client.get("/api/v1/auth/me", headers=auth_headers)
     assert me_res.status_code == 200
     assert me_res.json()["success"] is True
 
@@ -54,36 +56,26 @@ def test_disasters_list():
     assert response.status_code in [200, 307]
 
 
-def test_reports_list():
-    token = get_auth_token()
-    headers = {"Authorization": f"Bearer {token}"} if token else {}
-    response = client.get("/api/v1/reports/", headers=headers)
+def test_reports_list(auth_headers):
+    response = client.get("/api/v1/reports/", headers=auth_headers)
     assert response.status_code == 200
 
 
-def test_resources_list():
-    token = get_auth_token()
-    headers = {"Authorization": f"Bearer {token}"} if token else {}
-    response = client.get("/api/v1/resources/", headers=headers)
+def test_resources_list(auth_headers):
+    response = client.get("/api/v1/resources/", headers=auth_headers)
     assert response.status_code == 200
 
 
-def test_hospitals_list():
-    token = get_auth_token()
-    headers = {"Authorization": f"Bearer {token}"} if token else {}
-    response = client.get("/api/v1/hospitals/", headers=headers)
+def test_hospitals_list(auth_headers):
+    response = client.get("/api/v1/hospitals/", headers=auth_headers)
     assert response.status_code == 200
 
 
-def test_shelters_list():
-    token = get_auth_token()
-    headers = {"Authorization": f"Bearer {token}"} if token else {}
-    response = client.get("/api/v1/shelters/", headers=headers)
+def test_shelters_list(auth_headers):
+    response = client.get("/api/v1/shelters/", headers=auth_headers)
     assert response.status_code == 200
 
 
-def test_dashboard_summary():
-    token = get_auth_token()
-    headers = {"Authorization": f"Bearer {token}"} if token else {}
-    response = client.get("/api/v1/dashboard/summary", headers=headers)
+def test_dashboard_summary(auth_headers):
+    response = client.get("/api/v1/dashboard/summary", headers=auth_headers)
     assert response.status_code == 200

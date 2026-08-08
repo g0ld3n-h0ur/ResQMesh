@@ -68,7 +68,7 @@ export const CitizenSOS: React.FC = () => {
         address: address || "Chennai Coastal Area",
         description: description || "Immediate assistance requested.",
       };
-      await api.post("/reports/", payload);
+      await api.post("/reports/emergency", payload);
     },
     onSuccess: () => {
       setFormMsg({ type: "success", text: "Distress signal transmitted to emergency control center." });

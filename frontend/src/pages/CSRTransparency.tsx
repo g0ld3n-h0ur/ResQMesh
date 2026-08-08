@@ -1,12 +1,29 @@
 import React from "react";
+import { useQuery } from "@tanstack/react-query";
+import { api, unwrapList } from "../lib/api";
 
-const CSR_FUNDS = [
+const DEMO_CSR_FUNDS = [
   { id: "CSR-2024-A", donor: "Apex Global Foundation", pledged: 500000, deployed: 420000, beneficiaries: 14200, status: "Active" },
   { id: "CSR-2024-B", donor: "MedTech Cares Initiative", pledged: 250000, deployed: 250000, beneficiaries: 8900, status: "Fully Deployed" },
   { id: "CSR-2024-C", donor: "State Relief Syndicate", pledged: 1000000, deployed: 650000, beneficiaries: 28000, status: "Active" },
 ];
 
 export const CSRTransparency: React.FC = () => {
+  const { data: apiPrograms = [] } = useQuery<any[]>({
+    queryKey: ["csr-programs"],
+    queryFn: async () => unwrapList(await api.get("/csr/programs")),
+  });
+
+  const csrFunds = apiPrograms.length > 0
+    ? apiPrograms.map((p: any) => ({
+        id: p.id ? `CSR-${p.id.slice(0, 6)}` : "CSR-PROG",
+        donor: p.program_name || "Corporate Donor",
+        pledged: p.total_contribution_usd || 100000,
+        deployed: p.utilized_amount_usd || 50000,
+        beneficiaries: p.beneficiary_count || 1000,
+        status: p.status === "ACTIVE" ? "Active" : "Fully Deployed",
+      }))
+    : DEMO_CSR_FUNDS;
   return (
     <div className="space-y-4 font-sans text-[#172033]">
       
@@ -25,7 +42,7 @@ export const CSRTransparency: React.FC = () => {
       <div className="bg-white border border-[#E4E7EC] rounded-md overflow-hidden">
         <div className="p-3 border-b border-[#E4E7EC] bg-[#F7F8FA] flex items-center justify-between text-xs">
           <span className="font-bold text-[#172033]">Corporate Fund Grants Ledger</span>
-          <span className="text-[10px] text-[#667085]">{CSR_FUNDS.length} Active Grants</span>
+          <span className="text-[10px] text-[#667085]">{csrFunds.length} Active Grants</span>
         </div>
 
         <div className="overflow-x-auto">
@@ -42,7 +59,7 @@ export const CSRTransparency: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-[#E4E7EC]">
-              {CSR_FUNDS.map((fund) => {
+              {csrFunds.map((fund) => {
                 const pct = Math.round((fund.deployed / fund.pledged) * 100);
                 return (
                   <tr key={fund.id} className="hover:bg-slate-50">

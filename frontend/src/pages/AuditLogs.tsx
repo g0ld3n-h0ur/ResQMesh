@@ -1,4 +1,6 @@
 import React, { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { api, unwrapList } from "../lib/api";
 
 interface AuditEntry {
   id: string;
@@ -19,8 +21,24 @@ const INITIAL_LOGS: AuditEntry[] = [
 ];
 
 export const AuditLogs: React.FC = () => {
-  const [logs] = useState<AuditEntry[]>(INITIAL_LOGS);
   const [filterSeverity, setFilterSeverity] = useState<string>("ALL");
+
+  const { data: apiLogs = [] } = useQuery<any[]>({
+    queryKey: ["audit-trail"],
+    queryFn: async () => unwrapList(await api.get("/governance/audit-trail")),
+  });
+
+  const logs: AuditEntry[] = apiLogs.length > 0
+    ? apiLogs.map((l: any) => ({
+        id: l.id ? `AUD-${l.id.slice(0, 4)}` : "AUD-0000",
+        timestamp: l.created_at || new Date().toISOString(),
+        actor: l.actor_role || l.actor_id || "system.admin",
+        action: l.action || "State Change",
+        resource_ref: l.entity_id ? `${l.entity_type || 'ENT'}-${l.entity_id.slice(0, 4)}` : "GEN-000",
+        severity: l.action?.includes("CRITICAL") ? "CRITICAL" : l.action?.includes("WARN") ? "WARNING" : "INFO",
+        ip_address: "127.0.0.1",
+      }))
+    : INITIAL_LOGS;
 
   const filtered = logs.filter(
     (l) => filterSeverity === "ALL" || l.severity === filterSeverity

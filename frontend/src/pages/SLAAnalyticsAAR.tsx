@@ -1,6 +1,8 @@
 import React, { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { api, unwrapEnvelope } from "../lib/api";
 
-const RESPONSE_SLA_DATA = [
+const DEMO_RESPONSE_SLA_DATA = [
   { metric: "Triage / AI Classification", target_mins: 2, actual_mins: 1.4, status: "MET" },
   { metric: "Team Assignment", target_mins: 15, actual_mins: 12.0, status: "MET" },
   { metric: "Warehouse Dispatch", target_mins: 30, actual_mins: 28.5, status: "MET" },
@@ -10,6 +12,15 @@ const RESPONSE_SLA_DATA = [
 
 export const SLAAnalyticsAAR: React.FC = () => {
   const [activeTab, setActiveTab] = useState<"sla" | "aar">("sla");
+
+  const { data: apiSla } = useQuery<any>({
+    queryKey: ["governance-sla"],
+    queryFn: async () => unwrapEnvelope(await api.get("/governance/analytics/sla")),
+  });
+
+  const slaData = apiSla?.milestones
+    ? apiSla.milestones
+    : DEMO_RESPONSE_SLA_DATA;
 
   return (
     <div className="space-y-4 font-sans text-[#172033]">
@@ -60,7 +71,7 @@ export const SLAAnalyticsAAR: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-[#E4E7EC]">
-              {RESPONSE_SLA_DATA.map((row) => (
+              {slaData.map((row: any) => (
                 <tr key={row.metric} className="hover:bg-slate-50">
                   <td className="py-2 px-3 font-semibold text-[#172033]">{row.metric}</td>
                   <td className="py-2 px-3 text-right font-mono text-[#667085]">{row.target_mins}</td>

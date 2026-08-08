@@ -35,8 +35,21 @@ export const AIPrediction: React.FC = () => {
         population_affected: population,
         households_affected: households,
         infrastructure_damage_score: damageScore,
+        nearest_relief_center_distance_km: 14.25,
+        available_volunteers: 27,
+        medical_teams_available: 2,
+        food_stock_kg: 210.0,
+        water_stock_liters: 1725.0,
+        shelter_capacity: 292.0,
+        funding_available_usd: 46534.98,
+        vulnerability_index: 0.277,
+        ngo_present: true,
+        government_response_active: true,
         disaster_type: disasterType,
         severity_level: severity,
+        accessibility_status: "Accessible",
+        communication_status: "Full",
+        power_status: "Partial",
       });
 
       if (res.data.success) {
