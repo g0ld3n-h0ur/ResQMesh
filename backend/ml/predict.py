@@ -280,8 +280,8 @@ def predict_flood(input_data: dict[str, Any]) -> dict[str, Any]:
 # keep in sync with training.
 # ---------------------------------------------------------------------------
 
+from ml.train_priority_model import FEATURE_COLUMNS as _PRIORITY_FEATURE_COLUMNS  # noqa: E402
 
-from backend.ml.train_priority_model import FEATURE_COLUMNS as _PRIORITY_FEATURE_COLUMNS
 _PRIORITY_CLASSIFIER_NAME = "priority_classifier"
 _RELIEF_UNITS_REGRESSOR_NAME = "relief_units_regressor"
 
@@ -300,92 +300,6 @@ def _build_priority_input_row(input_data: dict[str, Any]) -> Any:
 
 
 def predict_allocation_priority(input_data: dict[str, Any]) -> dict[str, Any]:
-    """
-    Predict allocation priority using the validated XGBoost classifier.
-    """
-
-    import pandas as pd
-
-    # Load the XGBoost model artifacts
-    model = registry.load("xgb_priority_classifier")
-    label_encoder = registry.load("xgb_priority_label_encoder")
-    feature_columns = registry.load("xgb_feature_columns")
-
-    # Validate the original input features
-    missing = [
-        col for col in _PRIORITY_FEATURE_COLUMNS
-        if col not in input_data
-    ]
-
-    if missing:
-        raise ValueError(
-            f"Missing required priority model input features: {missing}"
-        )
-
-    # Build a single-row dataframe from the original 18 features
-    row = pd.DataFrame([
-        {
-            col: input_data[col]
-            for col in _PRIORITY_FEATURE_COLUMNS
-        }
-    ])
-
-    # Convert boolean values
-    for col in ["ngo_present", "government_response_active"]:
-        row[col] = row[col].astype(int)
-
-    # One-hot encode exactly like the XGBoost training pipeline
-    categorical_columns = [
-        "disaster_type",
-        "severity_level",
-        "accessibility_status",
-        "communication_status",
-        "power_status",
-    ]
-
-    row = pd.get_dummies(
-        row,
-        columns=categorical_columns,
-        dummy_na=True
-    )
-
-    # Ensure EXACTLY the same 39 columns used during training
-    row = row.reindex(columns=feature_columns, fill_value=0)
-
-    try:
-        encoded_prediction = model.predict(row)[0]
-        probabilities = model.predict_proba(row)[0]
-
-        prediction = label_encoder.inverse_transform(
-            [int(encoded_prediction)]
-        )[0]
-
-        classes = label_encoder.classes_.tolist()
-
-        confidence = float(
-            probabilities[int(encoded_prediction)]
-        )
-
-    except Exception as exc:
-        raise RuntimeError(
-            f"XGBoost priority classifier inference failed: {exc}"
-        ) from exc
-
-    logger.info(
-        "XGBoost priority prediction: %s (confidence=%.4f)",
-        prediction,
-        confidence,
-    )
-
-    return {
-        "allocation_priority": str(prediction),
-        "confidence": round(confidence, 4),
-        "class_probabilities": {
-            str(cls): round(float(prob), 4)
-            for cls, prob in zip(classes, probabilities)
-        },
-        "model": "xgb_priority_classifier",
-    }
     """
     Predict resource allocation priority (Low/Medium/High/Critical) for a
     disaster incident, via the RandomForestClassifier trained on the

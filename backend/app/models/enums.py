@@ -81,6 +81,114 @@ class ResourceStatus(str, enum.Enum):
     """Operational status of a relief resource item."""
 
     AVAILABLE = "available"
+    BUSY = "busy"
+    RESERVED = "reserved"
+    DISPATCHED = "dispatched"
+    UNAVAILABLE = "unavailable"
     ALLOCATED = "allocated"
     IN_TRANSIT = "in_transit"
     CONSUMED = "consumed"
+
+
+# ---------------------------------------------------------------------------
+# SaaS Subscription Tier
+# ---------------------------------------------------------------------------
+class SubscriptionTier(str, enum.Enum):
+    """SaaS subscription plan tier."""
+
+    PILOT = "pilot"
+    PROFESSIONAL = "professional"
+    ENTERPRISE = "enterprise"
+
+
+# ---------------------------------------------------------------------------
+# SaaS Feature Flag
+# ---------------------------------------------------------------------------
+class FeatureFlag(str, enum.Enum):
+    """SaaS feature flags for plan permissions."""
+
+    AI = "ai"
+    ANALYTICS = "analytics"
+    AUDIT = "audit"
+    CSR = "csr"
+    ADVANCED_ROUTING = "advanced_routing"
+    API_ACCESS = "api_access"
+    TRANSPARENCY = "transparency"
+
+
+# ---------------------------------------------------------------------------
+# Delivery & Proof of Delivery Status
+# ---------------------------------------------------------------------------
+class DeliveryStatus(str, enum.Enum):
+    """Post-disaster proof of delivery status."""
+
+    SENT = "sent"
+    RECEIVED = "received"
+    VERIFIED = "verified"
+    DISCREPANCY = "discrepancy"
+
+
+# ---------------------------------------------------------------------------
+# Volunteer Status
+# ---------------------------------------------------------------------------
+class VolunteerStatus(str, enum.Enum):
+    """Volunteer availability and assignment status."""
+
+    AVAILABLE = "available"
+    ASSIGNED = "assigned"
+    ACTIVE = "active"
+    COMPLETED = "completed"
+    UNAVAILABLE = "unavailable"
+
+
+# ---------------------------------------------------------------------------
+# Procurement Status
+# ---------------------------------------------------------------------------
+class ProcurementStatus(str, enum.Enum):
+    """Emergency procurement workflow status."""
+
+    REQUESTED = "requested"
+    APPROVED = "approved"
+    PROCURED = "procured"
+    DELIVERED = "delivered"
+    CANCELLED = "cancelled"
+
+
+# ---------------------------------------------------------------------------
+# Anomaly Severity
+# ---------------------------------------------------------------------------
+class AnomalySeverity(str, enum.Enum):
+    """Severity level of detected inventory or audit anomalies."""
+
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+
+# ---------------------------------------------------------------------------
+# Road Closure Reason
+# ---------------------------------------------------------------------------
+class ClosureReason(str, enum.Enum):
+    """Reason for road blockage or closure."""
+
+    FLOOD = "flood"
+    LANDSLIDE = "landslide"
+    EARTHQUAKE = "earthquake"
+    FALLEN_INFRASTRUCTURE = "fallen_infrastructure"
+    EMERGENCY_CLOSURE = "emergency_closure"
+    AUTHORITY_RESTRICTION = "authority_restriction"
+
+
+# ---------------------------------------------------------------------------
+# Geofence Zone Type
+# ---------------------------------------------------------------------------
+class GeofenceType(str, enum.Enum):
+    """Geospatial zone classification."""
+
+    DISASTER_ZONE = "disaster_zone"
+    RESTRICTED_ZONE = "restricted_zone"
+    EVACUATION_ZONE = "evacuation_zone"
+    OPERATIONAL_ZONE = "operational_zone"
+    NO_ENTRY_ZONE = "no_entry_zone"
+
