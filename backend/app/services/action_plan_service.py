@@ -64,9 +64,9 @@ def generate_action_plan(
             min_hosp_dist = dist
             nearest_hospital = {
                 "id": str(hosp.id),
-                "name": hosp.name,
+                "name": getattr(hosp, "hospital_name", getattr(hosp, "name", "Hospital")),
                 "distance_km": dist,
-                "icu_available": getattr(hosp, "available_icu_beds", getattr(hosp, "available_beds", 10)),
+                "icu_available": getattr(hosp, "icu_beds", getattr(hosp, "available_beds", 10)),
                 "emergency_status": "OPERATIONAL",
             }
 
@@ -80,7 +80,7 @@ def generate_action_plan(
             min_shelt_dist = dist
             nearest_shelter = {
                 "id": str(shelt.id),
-                "name": shelt.name,
+                "name": getattr(shelt, "shelter_name", getattr(shelt, "name", "Shelter")),
                 "distance_km": dist,
                 "available_capacity": getattr(shelt, "current_occupancy", getattr(shelt, "capacity", 100)),
             }
@@ -90,9 +90,9 @@ def generate_action_plan(
     resource_summary = [
         {
             "id": str(r.id),
-            "name": r.name,
-            "category": r.category if hasattr(r, "category") else "General",
-            "available_quantity": getattr(r, "quantity", 100),
+            "name": getattr(r, "resource_type", getattr(r, "name", "Resource")),
+            "category": getattr(r, "resource_type", "General"),
+            "available_quantity": getattr(r, "available_quantity", getattr(r, "quantity", 100)),
             "status": getattr(r, "status", "AVAILABLE"),
         }
         for r in available_resources[:5]
