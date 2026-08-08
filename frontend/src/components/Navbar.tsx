@@ -1,67 +1,141 @@
-import React from "react";
-import { useLocation } from "react-router-dom";
-import { Menu, Bell, User } from "lucide-react";
+import React, { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useAuthStore } from "../lib/authStore";
+import { api, unwrapList } from "../lib/api";
 
-interface NavbarProps {
-  onMenuToggle: () => void;
+interface NotificationItem {
+  id: string;
+  title: string;
+  message: string;
+  priority: string;
+  is_read: boolean;
+  created_at: string;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ onMenuToggle }) => {
-  const location = useLocation();
+interface NavbarProps {
+  onToggleSidebar?: () => void;
+}
 
-  const getPageTitle = () => {
-    switch (location.pathname) {
-      case "/":
-        return "Command Center Dashboard";
-      case "/prediction":
-        return "AI Risk & Flood Prediction";
-      case "/resources":
-        return "Resource Inventory & Allocation";
-      case "/shelters":
-        return "Emergency Shelter Coordinator";
-      case "/hospitals":
-        return "Hospital Fleet & Capacity";
-      case "/reports":
-        return "Citizen Distress Incident Reports";
-      case "/settings":
-        return "Portal System Settings";
-      default:
-        return "ResQMesh Portal";
-    }
-  };
+export const Navbar: React.FC<NavbarProps> = ({ onToggleSidebar }) => {
+  const { user, logout } = useAuthStore();
+  const queryClient = useQueryClient();
+  const [showNotifications, setShowNotifications] = useState(false);
+
+  const { data: notifications = [] } = useQuery<NotificationItem[]>({
+    queryKey: ["navbar-notifications"],
+    queryFn: async () => unwrapList<NotificationItem>(await api.get("/notifications/")),
+    refetchInterval: 30_000,
+  });
+
+  const markAsReadMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await api.patch(`/notifications/${id}/read`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["navbar-notifications"] });
+    },
+  });
+
+  const unreadCount = notifications.filter((n) => !n.is_read).length;
 
   return (
-    <header className="flex items-center justify-between h-16 px-6 bg-white border-b border-slate-200 shadow-sm z-30">
-      <div className="flex items-center space-x-4">
-        <button
-          className="p-2 rounded-md hover:bg-slate-100 lg:hidden focus:outline-none"
-          onClick={onMenuToggle}
-        >
-          <Menu className="w-5 h-5 text-slate-600" />
-        </button>
-        <h1 className="text-xl font-semibold text-slate-800 tracking-tight">
-          {getPageTitle()}
-        </h1>
-      </div>
-
-      <div className="flex items-center space-x-4">
-        <button className="relative p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-50 rounded-full transition-colors duration-150">
-          <Bell className="w-5 h-5" />
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-rose-500 rounded-full border border-white" />
-        </button>
-
-        <div className="h-6 w-px bg-slate-200" />
-
-        <div className="flex items-center space-x-3">
-          <div className="flex flex-col text-right hidden sm:flex">
-            <span className="text-sm font-semibold text-slate-800">Gov. Command Unit</span>
-            <span className="text-xs text-indigo-600 font-medium">Administrator</span>
-          </div>
-          <div className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center border border-slate-200 text-slate-600 cursor-pointer hover:bg-slate-200 transition-colors duration-150">
-            <User className="w-4 h-4" />
-          </div>
+    <header className="h-12 bg-white border-b border-[#E4E7EC] px-4 flex items-center justify-between text-xs sticky top-0 z-30 font-sans">
+      
+      {/* Left Branding & Mobile Toggle */}
+      <div className="flex items-center space-x-3">
+        {onToggleSidebar && (
+          <button
+            onClick={onToggleSidebar}
+            className="p-1 rounded text-[#667085] hover:bg-slate-100 lg:hidden"
+          >
+            ☰
+          </button>
+        )}
+        <div className="flex items-center space-x-2">
+          <span className="font-bold text-[#172033] tracking-tight">ResQMesh</span>
+          <span className="hidden sm:inline text-[#667085]">|</span>
+          <span className="hidden sm:inline font-semibold text-[#172033]">
+            Tamil Nadu Response Network
+          </span>
         </div>
       </div>
+
+      {/* Center Operational Status */}
+      <div className="hidden md:flex items-center space-x-3 text-[11px]">
+        <span className="flex items-center space-x-1.5 text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
+          <span>Operational</span>
+        </span>
+        <span className="text-[#667085]">Updated {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+      </div>
+
+      {/* Right Controls */}
+      <div className="flex items-center space-x-3">
+        {/* Notifications Button */}
+        <div className="relative">
+          <button
+            onClick={() => setShowNotifications(!showNotifications)}
+            className="relative px-2 py-1 text-[#667085] hover:text-[#172033] font-medium text-xs flex items-center space-x-1"
+          >
+            <span>Alerts</span>
+            {unreadCount > 0 && (
+              <span className="px-1.5 py-0.2 rounded-full bg-red-600 text-white font-mono text-[9px] font-bold">
+                {unreadCount}
+              </span>
+            )}
+          </button>
+
+          {/* Notifications Dropdown Drawer */}
+          {showNotifications && (
+            <div className="absolute right-0 mt-2 w-72 bg-white border border-[#E4E7EC] shadow-sm rounded p-3 space-y-2 z-50">
+              <div className="flex items-center justify-between border-b border-[#E4E7EC] pb-2">
+                <span className="font-bold text-[#172033]">System Notifications</span>
+                <span className="text-[10px] text-[#667085]">{unreadCount} unread</span>
+              </div>
+              <div className="divide-y divide-slate-100 max-h-60 overflow-y-auto">
+                {notifications.length === 0 ? (
+                  <div className="py-3 text-center text-[#667085] text-[11px]">No alerts</div>
+                ) : (
+                  notifications.slice(0, 5).map((n) => (
+                    <div key={n.id} className="py-2 text-[11px] space-y-0.5">
+                      <div className="flex justify-between font-semibold text-[#172033]">
+                        <span>{n.title}</span>
+                        {!n.is_read && (
+                          <button
+                            onClick={() => markAsReadMutation.mutate(n.id)}
+                            className="text-[9px] text-blue-600 underline hover:text-blue-800"
+                          >
+                            Dismiss
+                          </button>
+                        )}
+                      </div>
+                      <p className="text-[#667085] text-[10px] line-clamp-1">{n.message}</p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* User Profile */}
+        {user ? (
+          <div className="flex items-center space-x-2 border-l border-[#E4E7EC] pl-3">
+            <span className="font-semibold text-[#172033] capitalize">{user.role}</span>
+            <button
+              onClick={logout}
+              className="text-[11px] text-[#667085] hover:text-red-600 underline font-medium"
+            >
+              Logout
+            </button>
+          </div>
+        ) : (
+          <a href="/login" className="text-blue-600 font-semibold hover:underline">
+            Login
+          </a>
+        )}
+      </div>
+
     </header>
   );
 };

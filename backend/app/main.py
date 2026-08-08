@@ -22,9 +22,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1 import (
     auth,
     citizen,
+    commander,
+    csr,
     dashboard,
     disasters,
     external_data,
+    governance,
     government,
     hospital,
     hospitals,
@@ -33,6 +36,7 @@ from app.api.v1 import (
     prediction,
     reports,
     resources,
+    routing,
     shelters,
     users,
     volunteer,
@@ -185,6 +189,10 @@ def create_application() -> FastAPI:
     application.include_router(notifications.router, prefix=api_prefix)
     application.include_router(external_data.router, prefix=api_prefix)
     application.include_router(users.router, prefix=api_prefix)
+    application.include_router(routing.router, prefix=api_prefix)
+    application.include_router(commander.router, prefix=api_prefix)
+    application.include_router(csr.router, prefix=api_prefix)
+    application.include_router(governance.router, prefix=api_prefix)
 
     return application
 

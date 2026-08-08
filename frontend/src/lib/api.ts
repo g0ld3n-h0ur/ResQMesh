@@ -62,55 +62,10 @@ export const api = axios.create({
   baseURL: API_BASE_URL,
 });
 
-/**
- * Proactively registers/logs in the admin credentials on the backend.
- * Caches the token to localStorage. Concurrent callers share one in-flight
- * request instead of each firing their own /auth/login call.
- */
-let loginInFlight: Promise<string | null> | null = null;
-
-export async function loginAndGetToken(): Promise<string | null> {
-  const cachedToken = localStorage.getItem("resqmesh_token");
-  if (cachedToken) {
-    return cachedToken;
-  }
-
-  if (loginInFlight) {
-    return loginInFlight;
-  }
-
-  loginInFlight = (async () => {
-    try {
-      const params = new URLSearchParams();
-      params.append("username", "gov.admin@tn.gov.in");
-      params.append("password", "ResQMesh@2024!");
-
-      const response = await axios.post(`${API_BASE_URL}/auth/login`, params, {
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-      });
-
-      const token = response.data.access_token;
-      if (token) {
-        localStorage.setItem("resqmesh_token", token);
-        return token;
-      }
-    } catch (error) {
-      console.error("Auto-login failed:", error);
-    } finally {
-      loginInFlight = null;
-    }
-    return null;
-  })();
-
-  return loginInFlight;
-}
-
-// Request interceptor to attach JWT token to outgoing requests
+// Request interceptor to attach JWT token from localStorage to outgoing requests
 api.interceptors.request.use(
-  async (config) => {
-    const token = await loginAndGetToken();
+  (config) => {
+    const token = localStorage.getItem("resqmesh_token");
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -121,13 +76,14 @@ api.interceptors.request.use(
   }
 );
 
-// Response interceptor to clear token on 401 Unauthorized
+// Response interceptor to handle 401 Unauthorized
 api.interceptors.response.use(
   (response) => response,
-  async (error) => {
+  (error) => {
     if (error.response && error.response.status === 401) {
       localStorage.removeItem("resqmesh_token");
     }
     return Promise.reject(error);
   }
 );
+

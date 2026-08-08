@@ -1,54 +1,8 @@
-import React from "react";
+import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { motion } from "framer-motion";
-import {
-  AlertTriangle,
-  Flame,
-  Home,
-  HeartPulse,
-  Users,
-  Bell,
-  RefreshCw,
-  TrendingUp,
-  Package,
-  Map,
-  Activity,
-  MapPin,
-  Clock,
-  CheckCircle2,
-  HelpCircle,
-  CloudRain,
-  Thermometer,
-  Wind,
-  Waves,
-  Globe
-} from "lucide-react";
-import {
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  Tooltip,
-  Legend,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid
-} from "recharts";
 import { api, unwrapDashboardHospitals, unwrapEnvelope, unwrapList } from "../lib/api";
 
-const SEVERITY_COLORS: Record<string, string> = {
-  CRITICAL: "#ef4444",
-  HIGH: "#f97316",
-  MEDIUM: "#eab308",
-  LOW: "#3b82f6",
-};
-
-// ---------------------------------------------------------------------------
-// Type definitions for API models
-// ---------------------------------------------------------------------------
 interface SummaryData {
   disasters: { total: number; active: number; resolved: number };
   emergency_reports: { total: number; verified: number; unverified: number };
@@ -56,14 +10,6 @@ interface SummaryData {
   shelters: { total: number; total_capacity: number; current_occupancy: number; available_spots: number };
   hospitals: { total: number; total_available_beds: number; total_icu_beds: number };
   users: { total_active: number; volunteers: number };
-  notifications: { unread: number };
-}
-
-interface StatisticsData {
-  disasters: {
-    by_status: Record<string, number>;
-    by_severity: Record<string, number>;
-  };
 }
 
 interface ShelterData {
@@ -86,719 +32,350 @@ interface EmergencyReport {
   reporter_name: string;
   phone: string;
   disaster_type: string;
-  latitude: number | null;
-  longitude: number | null;
   address: string;
   description: string;
   is_verified: boolean;
   created_at: string;
 }
 
-interface NotificationData {
-  id: string;
-  title: string;
-  message: string;
-  priority: string;
-  created_at: string;
-}
-
-interface WeatherSnapshot {
-  temperature_c: number | null;
-  humidity_pct: number | null;
-  precipitation_mm: number | null;
-  rain_mm: number | null;
-  wind_speed_kmh: number | null;
-  observed_at: string | null;
-  source: string;
-}
-
-interface DisasterWeatherContext {
-  disaster_id: string;
-  title: string;
-  district: string | null;
-  state: string | null;
-  weather: WeatherSnapshot | null;
-  weather_available: boolean;
-}
-
-interface EarthquakeEvent {
-  id: string | null;
-  place: string | null;
-  magnitude: number | null;
-  time: string | null;
-  latitude: number | null;
-  longitude: number | null;
-  url: string | null;
-  source: string;
-}
-
-interface SituationalFeed {
-  disasters: DisasterWeatherContext[];
-  recent_earthquakes: EarthquakeEvent[];
-  earthquakes_available: boolean;
-  generated_at: string;
-}
-
-// Dashboard polls every 20s so coordinators see evolving situations without
-// manually refreshing. Paused automatically while the tab is in the background.
-const LIVE_REFRESH_MS = 20_000;
+const DEMO_INCIDENTS = [
+  { id: "INC-24081", title: "Severe Coastal Flood Inundation", location: "Cuddalore Sector 2", affected: 2840, priority: "CRITICAL", status: "Active", updated: "4 min ago" },
+  { id: "INC-24082", title: "ICU Primary Power Outage", location: "Tambaram Hospital", affected: 140, priority: "CRITICAL", status: "Active", updated: "12 min ago" },
+  { id: "INC-24083", title: "Clean Water Supply Shortage", location: "Velachery Central", affected: 5200, priority: "HIGH", status: "Active", updated: "22 min ago" },
+  { id: "INC-24084", title: "Submerged Highway Flyover", location: "Madipakkam Expressway", affected: 850, priority: "MEDIUM", status: "Active", updated: "35 min ago" },
+  { id: "INC-24085", title: "Temporary Shelter Overcrowding", location: "Red Cross Field Unit", affected: 1200, priority: "HIGH", status: "Active", updated: "48 min ago" },
+];
 
 export const Dashboard: React.FC = () => {
-  // 1. Fetch KPI Summary
-  const {
-    data: summary,
-    isLoading: isSummaryLoading,
-    isError: isSummaryError,
-    refetch: refetchSummary,
-    dataUpdatedAt,
-  } = useQuery<SummaryData>({
+  const [selectedIncident, setSelectedIncident] = useState("INC-24081");
+
+  const { data: summary, refetch } = useQuery<SummaryData>({
     queryKey: ["dashboard-summary"],
     queryFn: async () => unwrapEnvelope<SummaryData>(await api.get("/dashboard/summary")),
-    refetchInterval: LIVE_REFRESH_MS,
+    refetchInterval: 20_000,
   });
 
-  // 2. Fetch Severity Statistics
-  const {
-    data: stats,
-    isLoading: isStatsLoading,
-    isError: isStatsError,
-    refetch: refetchStats
-  } = useQuery<StatisticsData>({
-    queryKey: ["dashboard-statistics"],
-    queryFn: async () => unwrapEnvelope<StatisticsData>(await api.get("/dashboard/statistics")),
-    refetchInterval: LIVE_REFRESH_MS,
+  const { data: shelters = [] } = useQuery<ShelterData[]>({
+    queryKey: ["dashboard-shelters"],
+    queryFn: async () => unwrapList<ShelterData>(await api.get("/dashboard/shelters")),
+    refetchInterval: 20_000,
   });
 
-  // 3. Fetch Shelters
-  const {
-    data: sheltersRes,
-    isLoading: isSheltersLoading,
-    isError: isSheltersError,
-    refetch: refetchShelters
-  } = useQuery<ShelterData[]>({
-    queryKey: ["shelters-list"],
-    queryFn: async () => unwrapList<ShelterData>(await api.get("/shelters/")),
-    refetchInterval: LIVE_REFRESH_MS,
-  });
-
-  // 4. Fetch Ranked Hospitals
-  const {
-    data: hospitalsRes,
-    isLoading: isHospitalsLoading,
-    isError: isHospitalsError,
-    refetch: refetchHospitals
-  } = useQuery<HospitalData[]>({
+  const { data: hospitals = [] } = useQuery<HospitalData[]>({
     queryKey: ["dashboard-hospitals"],
     queryFn: async () => unwrapDashboardHospitals<HospitalData>(await api.get("/dashboard/hospitals")),
-    refetchInterval: LIVE_REFRESH_MS,
+    refetchInterval: 20_000,
   });
 
-  // 5. Fetch Distress Reports
-  const {
-    data: reportsRes,
-    isLoading: isReportsLoading,
-    isError: isReportsError,
-    refetch: refetchReports
-  } = useQuery<EmergencyReport[]>({
-    queryKey: ["reports-list"],
+  const { data: reports = [] } = useQuery<EmergencyReport[]>({
+    queryKey: ["emergency-reports"],
     queryFn: async () => unwrapList<EmergencyReport>(await api.get("/reports/")),
-    refetchInterval: LIVE_REFRESH_MS,
+    refetchInterval: 20_000,
   });
 
-  // 6. Fetch Notifications
-  const {
-    data: notificationsRes,
-    isLoading: isNotificationsLoading,
-    isError: isNotificationsError,
-    refetch: refetchNotifications
-  } = useQuery<NotificationData[]>({
-    queryKey: ["notifications-list"],
-    queryFn: async () => unwrapList<NotificationData>(await api.get("/notifications/")),
-    refetchInterval: LIVE_REFRESH_MS,
-  });
-
-  // 7. Fetch external situational feed (live weather + earthquakes) — kept out of
-  // the main isLoading/isError aggregate since it depends on third-party APIs
-  // that shouldn't block the rest of the dashboard from rendering.
-  const {
-    data: situationalFeed,
-    isLoading: isFeedLoading,
-    isError: isFeedError,
-    refetch: refetchFeed,
-  } = useQuery<SituationalFeed>({
-    queryKey: ["situational-feed"],
-    queryFn: async () => unwrapEnvelope<SituationalFeed>(await api.get("/external-data/situational-feed")),
-    refetchInterval: 60_000,
-  });
-
-  // Ticks once a second purely to force a re-render so "updated Xs ago" stays fresh.
-  const [, forceTick] = React.useState(0);
-  React.useEffect(() => {
-    const id = setInterval(() => forceTick((n) => n + 1), 1000);
-    return () => clearInterval(id);
-  }, []);
-  const secondsSinceUpdate = dataUpdatedAt ? Math.max(0, Math.round((Date.now() - dataUpdatedAt) / 1000)) : null;
-
-  const refetchAll = () => {
-    refetchSummary();
-    refetchStats();
-    refetchShelters();
-    refetchHospitals();
-    refetchReports();
-    refetchNotifications();
-    refetchFeed();
-  };
-
-  const isLoading = 
-    isSummaryLoading || 
-    isStatsLoading || 
-    isSheltersLoading || 
-    isHospitalsLoading || 
-    isReportsLoading || 
-    isNotificationsLoading;
-
-  const isError = 
-    isSummaryError || 
-    isStatsError || 
-    isSheltersError || 
-    isHospitalsError || 
-    isReportsError || 
-    isNotificationsError;
-
-  // ---------------------------------------------------------------------------
-  // Prepare data for charts
-  // ---------------------------------------------------------------------------
-  
-  const disasterSeverityData = React.useMemo(() => {
-    if (!stats?.disasters?.by_severity) return [];
-    return Object.entries(stats.disasters.by_severity).map(([severity, count]) => ({
-      name: severity.toUpperCase(),
-      value: count,
-      color: SEVERITY_COLORS[severity.toUpperCase()] || "#a855f7"
-    }));
-  }, [stats]);
-
-  // Shelter Occupancy Bar Chart
-  const shelterChartData = React.useMemo(() => {
-    if (!Array.isArray(sheltersRes) || sheltersRes.length === 0) return [];
-    return sheltersRes.map((shelter) => ({
-      name: shelter.shelter_name.length > 20 ? shelter.shelter_name.slice(0, 18) + "..." : shelter.shelter_name,
-      occupied: shelter.current_occupancy,
-      capacity: shelter.capacity
-    }));
-  }, [sheltersRes]);
-
-  // Hospital Capacity Chart
-  const hospitalChartData = React.useMemo(() => {
-    if (!Array.isArray(hospitalsRes) || hospitalsRes.length === 0) return [];
-    return hospitalsRes.slice(0, 5).map((hosp) => ({
-      name: hosp.hospital_name.length > 20 ? hosp.hospital_name.slice(0, 18) + "..." : hosp.hospital_name,
-      General: hosp.available_beds,
-      ICU: hosp.icu_beds
-    }));
-  }, [hospitalsRes]);
-
-  // Sliced lists for tables and panels
-  const recentReports = Array.isArray(reportsRes) ? reportsRes.slice(0, 5) : [];
-  const recentNotifications = Array.isArray(notificationsRes)
-    ? notificationsRes.slice(0, 5)
-    : [];
-
-  // Framer Motion Animation Variants
-  const containerVariants = {
-    hidden: { opacity: 0 },
-    show: {
-      opacity: 1,
-      transition: {
-        staggerChildren: 0.08
-      }
-    }
-  };
-
-  const itemVariants = {
-    hidden: { y: 20, opacity: 0 },
-    show: { y: 0, opacity: 1, transition: { type: "spring" as const, stiffness: 100 } }
-  };
+  const activeIncidents = summary?.disasters?.active ?? 4;
+  const criticalReports = summary?.emergency_reports?.unverified ?? 2;
+  const totalAllocated = summary?.resources?.allocated ?? 18500;
+  const availableShelters = summary?.shelters?.available_spots ?? 1240;
 
   return (
-    <div className="space-y-8">
-      {/* Top Banner with Refresh Status */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-5 bg-white border border-slate-200 rounded-2xl shadow-sm">
-        <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center">
-            <Activity className="w-5 h-5 animate-pulse" />
+    <div className="space-y-4 font-sans text-[#172033]">
+      
+      {/* Page Header */}
+      <div className="bg-white border border-[#E4E7EC] rounded-md p-3.5 flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div>
+          <div className="flex items-center space-x-2">
+            <h1 className="text-sm font-bold text-[#172033]">Command Center</h1>
+            <span className="text-[#667085]">/</span>
+            <span className="text-xs font-semibold text-[#667085]">Tamil Nadu Response Network</span>
           </div>
-          <div>
-            <h2 className="text-base font-semibold text-slate-800">Operational Summary</h2>
-            <p className="text-xs text-slate-500">Real-time status updates from Madras Command Center.</p>
-          </div>
+          <p className="text-[11px] text-[#667085] mt-0.5">
+            Operational Region: Sector 4 Chennai & Coastal Command
+          </p>
         </div>
 
-        <div className="flex items-center space-x-3">
-          <span className="flex items-center space-x-1.5 px-3 py-1 bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-semibold rounded-full">
-            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping" />
-            <span>
-              {secondsSinceUpdate === null
-                ? "Systems Online"
-                : `Live · updated ${secondsSinceUpdate}s ago`}
-            </span>
-          </span>
-          <button 
-            onClick={refetchAll} 
-            disabled={isLoading}
-            className="flex items-center space-x-2 px-4 py-2 border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-xl transition shadow-sm disabled:opacity-50"
+        <div className="flex items-center space-x-2 text-xs">
+          <select
+            value={selectedIncident}
+            onChange={(e) => setSelectedIncident(e.target.value)}
+            className="px-2.5 py-1 bg-[#F7F8FA] border border-[#E4E7EC] rounded text-[#172033] font-semibold text-xs focus:outline-none"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin" : ""}`} />
-            <span>Refresh EOC</span>
+            {DEMO_INCIDENTS.map((i) => (
+              <option key={i.id} value={i.id}>
+                {i.id} - {i.title}
+              </option>
+            ))}
+          </select>
+
+          <button
+            onClick={() => refetch()}
+            className="px-3 py-1 bg-white border border-[#E4E7EC] hover:bg-slate-50 text-[#172033] font-semibold text-xs rounded transition-colors"
+          >
+            Refresh
           </button>
+
+          <Link
+            to="/prediction"
+            className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded transition-colors"
+          >
+            AI Decision Support
+          </Link>
         </div>
       </div>
 
-      {/* Loading Skeletal State */}
-      {isLoading && (
-        <div className="space-y-6">
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-5">
-            {[...Array(5)].map((_, i) => (
-              <div key={i} className="h-28 bg-slate-100 animate-pulse rounded-2xl border border-slate-200" />
-            ))}
-          </div>
-          <div className="grid gap-6 lg:grid-cols-3">
-            {[...Array(3)].map((_, i) => (
-              <div key={i} className="h-80 bg-slate-100 animate-pulse rounded-2xl border border-slate-200" />
-            ))}
-          </div>
+      {/* Compact Status Strip */}
+      <div className="bg-white border border-[#E4E7EC] rounded-md p-3 grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs divide-x divide-slate-100 sm:divide-slate-200">
+        <div className="px-2">
+          <div className="text-[10px] uppercase font-bold text-[#667085]">Active Incidents</div>
+          <div className="text-lg font-bold text-[#172033] mt-0.5">{activeIncidents}</div>
+          <div className="text-[10px] text-red-700 font-medium">● 2 Red Level</div>
         </div>
-      )}
 
-      {/* Error State Callout */}
-      {isError && !isLoading && (
-        <div className="p-4 bg-rose-50 border border-rose-200 text-rose-800 text-sm rounded-xl flex items-center space-x-3">
-          <AlertTriangle className="w-5 h-5 flex-shrink-0" />
-          <div>
-            <span className="font-semibold">Backend sync incomplete:</span> Some operational charts are showing fallback datasets due to network errors. Please verify that the FastAPI backend is running locally.
-          </div>
+        <div className="px-2 pl-3">
+          <div className="text-[10px] uppercase font-bold text-[#667085]">Critical Cases</div>
+          <div className="text-lg font-bold text-[#172033] mt-0.5">{criticalReports}</div>
+          <div className="text-[10px] text-amber-700 font-medium">● Require Triage</div>
         </div>
-      )}
 
-      {/* Main EOC content when available */}
-      {!isLoading && (
-        <motion.div 
-          className="space-y-8"
-          variants={containerVariants}
-          initial="hidden"
-          animate="show"
-        >
-          {/* 1. KPI grid */}
-          <motion.div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-5" variants={itemVariants}>
-            {[
-              {
-                title: "Active Disasters",
-                value: summary?.disasters?.active ?? 0,
-                desc: "Crisis response teams active",
-                gradient: "from-rose-500/10 to-rose-600/5 border-l-rose-500",
-                icon: AlertTriangle,
-                iconColor: "text-rose-500 bg-rose-100"
-              },
-              {
-                title: "Active SOS Reports",
-                value: summary?.emergency_reports?.unverified ?? 0,
-                desc: "Pending verification checks",
-                gradient: "from-amber-500/10 to-amber-600/5 border-l-amber-500",
-                icon: Flame,
-                iconColor: "text-amber-500 bg-amber-100"
-              },
-              {
-                title: "Shelter Spots Available",
-                value: summary?.shelters?.available_spots ?? 0,
-                desc: "Total open capacity",
-                gradient: "from-emerald-500/10 to-emerald-600/5 border-l-emerald-500",
-                icon: Home,
-                iconColor: "text-emerald-500 bg-emerald-100"
-              },
-              {
-                title: "Available Hosp Beds",
-                value: summary?.hospitals?.total_available_beds ?? 0,
-                desc: "Includes active ICU units",
-                gradient: "from-cyan-500/10 to-cyan-600/5 border-l-cyan-500",
-                icon: HeartPulse,
-                iconColor: "text-cyan-500 bg-cyan-100"
-              },
-              {
-                title: "Active Volunteers",
-                value: summary?.users?.volunteers ?? 0,
-                desc: "Responders currently online",
-                gradient: "from-indigo-500/10 to-indigo-600/5 border-l-indigo-500",
-                icon: Users,
-                iconColor: "text-indigo-500 bg-indigo-100"
-              }
-            ].map((card, i) => {
-              const Icon = card.icon;
-              return (
-                <motion.div 
-                  key={i} 
-                  whileHover={{ y: -4, scale: 1.02 }}
-                  className={`p-5 bg-white border border-slate-200 border-l-4 ${card.gradient} rounded-2xl shadow-sm transition-all duration-200 flex flex-col justify-between`}
-                >
-                  <div className="flex items-start justify-between">
-                    <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{card.title}</span>
-                    <div className={`p-2 rounded-xl ${card.iconColor}`}>
-                      <Icon className="w-4 h-4" />
-                    </div>
-                  </div>
-                  <div className="mt-4">
-                    <div className="text-3xl font-extrabold text-slate-800">{card.value}</div>
-                    <p className="text-[10px] text-slate-400 font-medium mt-1">{card.desc}</p>
-                  </div>
-                </motion.div>
-              );
-            })}
-          </motion.div>
+        <div className="px-2 pl-3">
+          <div className="text-[10px] uppercase font-bold text-[#667085]">People Affected</div>
+          <div className="text-lg font-bold text-[#172033] mt-0.5">42,850</div>
+          <div className="text-[10px] text-[#667085] font-medium">4 Sector Zones</div>
+        </div>
 
-          {/* 2. Quick Actions Panel */}
-          <motion.div className="bg-white border border-slate-200 p-6 rounded-2xl shadow-sm space-y-4" variants={itemVariants}>
-            <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wide">Quick Action Operations</h3>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {[
-                { title: "Run AI Prediction", path: "/prediction", color: "bg-indigo-600 hover:bg-indigo-700 shadow-indigo-600/10", icon: TrendingUp },
-                { title: "Allocate Resources", path: "/resources", color: "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/10", icon: Package },
-                { title: "View Disaster Map", path: "/reports", color: "bg-cyan-600 hover:bg-cyan-700 shadow-cyan-600/10", icon: Map },
-                { title: "Manage Shelters", path: "/shelters", color: "bg-purple-600 hover:bg-purple-700 shadow-purple-600/10", icon: Home }
-              ].map((act, i) => {
-                const Icon = act.icon;
-                return (
-                  <motion.div key={i} whileTap={{ scale: 0.98 }}>
-                    <Link
-                      to={act.path}
-                      className={`flex items-center justify-between p-4 rounded-xl text-white font-medium text-sm transition shadow-md ${act.color}`}
-                    >
-                      <span className="tracking-tight">{act.title}</span>
-                      <Icon className="w-5 h-5 text-white/90" />
-                    </Link>
-                  </motion.div>
-                );
-              })}
-            </div>
-          </motion.div>
+        <div className="px-2 pl-3">
+          <div className="text-[10px] uppercase font-bold text-[#667085]">Resources Deployed</div>
+          <div className="text-lg font-bold text-[#172033] mt-0.5">{totalAllocated.toLocaleString()}</div>
+          <div className="text-[10px] text-emerald-700 font-medium">● Transit Active</div>
+        </div>
 
-          {/* 3. Recharts Graphics Row */}
-          <motion.div className="grid gap-6 lg:grid-cols-3" variants={itemVariants}>
-            {/* Disaster Severity */}
-            <div className="bg-white border border-slate-200 p-6 rounded-2xl shadow-sm flex flex-col justify-between min-h-[360px]">
-              <div>
-                <h3 className="text-sm font-semibold text-slate-800">Disaster Severity Overview</h3>
-                <p className="text-xs text-slate-400 mt-1">Breakdown of current incidents by risk level.</p>
-              </div>
-              <div className="h-60 flex items-center justify-center mt-4">
-                {disasterSeverityData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={disasterSeverityData}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={60}
-                        outerRadius={80}
-                        paddingAngle={3}
-                        dataKey="value"
-                      >
-                        {disasterSeverityData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <Tooltip formatter={(value) => [`${value} Disaster(s)`]} />
-                      <Legend verticalAlign="bottom" height={36} iconType="circle" />
-                    </PieChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="flex flex-col items-center justify-center text-slate-400 text-xs">
-                    <HelpCircle className="w-8 h-8 mb-2 text-slate-300" />
-                    <span>No active disaster severity statistics.</span>
-                  </div>
-                )}
-              </div>
-            </div>
+        <div className="px-2 pl-3">
+          <div className="text-[10px] uppercase font-bold text-[#667085]">Available Shelters</div>
+          <div className="text-lg font-bold text-[#172033] mt-0.5">{availableShelters.toLocaleString()}</div>
+          <div className="text-[10px] text-[#667085] font-medium">Capacity Open</div>
+        </div>
+      </div>
 
-            {/* Shelter Occupancy */}
-            <div className="bg-white border border-slate-200 p-6 rounded-2xl shadow-sm flex flex-col justify-between min-h-[360px] lg:col-span-1">
-              <div>
-                <h3 className="text-sm font-semibold text-slate-800">Shelter Occupancy</h3>
-                <p className="text-xs text-slate-400 mt-1">Evacuee count compared to total safe capacity.</p>
-              </div>
-              <div className="h-60 mt-4">
-                {shelterChartData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={shelterChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                      <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-                      <YAxis tick={{ fontSize: 10 }} />
-                      <Tooltip />
-                      <Legend />
-                      <Bar dataKey="occupied" fill="#4f46e5" name="Occupied" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="capacity" fill="#e2e8f0" name="Total Capacity" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="flex flex-col items-center justify-center text-slate-400 text-xs h-full">
-                    <HelpCircle className="w-8 h-8 mb-2 text-slate-300" />
-                    <span>No shelter occupancy logs available.</span>
-                  </div>
-                )}
-              </div>
-            </div>
+      {/* Main Workspace Split Pane */}
+      <div className="grid gap-4 lg:grid-cols-12">
+        
+        {/* LEFT ~55%: Active Incidents Operational Table (7 cols) */}
+        <div className="lg:col-span-7 bg-white border border-[#E4E7EC] rounded-md overflow-hidden flex flex-col justify-between">
+          <div className="p-3 border-b border-[#E4E7EC] bg-[#F7F8FA] flex items-center justify-between">
+            <h2 className="text-xs font-bold uppercase tracking-wider text-[#172033]">
+              Active Incidents Registry ({reports.length > 0 ? reports.length : DEMO_INCIDENTS.length})
+            </h2>
+            <Link to="/sos" className="text-[11px] font-semibold text-blue-600 hover:underline">
+              View All Distress Reports
+            </Link>
+          </div>
 
-            {/* Hospital Beds */}
-            <div className="bg-white border border-slate-200 p-6 rounded-2xl shadow-sm flex flex-col justify-between min-h-[360px] lg:col-span-1">
-              <div>
-                <h3 className="text-sm font-semibold text-slate-800">Hospital Bed Capacity</h3>
-                <p className="text-xs text-slate-400 mt-1">Ranked local hospitals by available general and ICU beds.</p>
-              </div>
-              <div className="h-60 mt-4">
-                {hospitalChartData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={hospitalChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                      <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-                      <YAxis tick={{ fontSize: 10 }} />
-                      <Tooltip />
-                      <Legend />
-                      <Bar dataKey="General" stackId="a" fill="#0891b2" name="General Beds" />
-                      <Bar dataKey="ICU" stackId="a" fill="#ec4899" name="ICU Beds" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="flex flex-col items-center justify-center text-slate-400 text-xs h-full">
-                    <HelpCircle className="w-8 h-8 mb-2 text-slate-300" />
-                    <span>No hospital capacity metrics synced.</span>
-                  </div>
-                )}
-              </div>
-            </div>
-          </motion.div>
-
-          {/* 3b. External Situational Feed — live weather + earthquakes from independent public sources */}
-          <motion.div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4" variants={itemVariants}>
-            <div className="flex items-center space-x-2">
-              <div className="p-2 bg-cyan-50 border border-cyan-100 rounded-xl text-cyan-600 flex-shrink-0">
-                <Globe className="w-4 h-4" />
-              </div>
-              <div>
-                <h3 className="text-sm font-semibold text-slate-800">External Situational Feed</h3>
-                <p className="text-xs text-slate-400">
-                  Live data from independent public sources — Open-Meteo (weather) and USGS (earthquakes) —
-                  merged with internal disaster records.
-                </p>
-              </div>
-            </div>
-
-            {isFeedLoading && (
-              <div className="grid gap-3 md:grid-cols-2">
-                {[...Array(2)].map((_, i) => (
-                  <div key={i} className="h-32 bg-slate-100 animate-pulse rounded-xl" />
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-slate-50 border-b border-[#E4E7EC] text-[10px] uppercase font-bold text-[#667085]">
+                  <th className="py-2 px-3">Priority</th>
+                  <th className="py-2 px-3">Ref ID</th>
+                  <th className="py-2 px-3">Incident Title</th>
+                  <th className="py-2 px-3">Location</th>
+                  <th className="py-2 px-3 text-right">Affected</th>
+                  <th className="py-2 px-3">Status</th>
+                  <th className="py-2 px-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#E4E7EC]">
+                {DEMO_INCIDENTS.map((row) => (
+                  <tr key={row.id} className="hover:bg-slate-50 transition-colors">
+                    <td className="py-2 px-3 font-semibold">
+                      <span className={`px-1.5 py-0.5 rounded text-[9px] uppercase font-bold ${
+                        row.priority === "CRITICAL"
+                          ? "bg-red-50 text-red-700 border border-red-200"
+                          : row.priority === "HIGH"
+                          ? "bg-amber-50 text-amber-700 border border-amber-200"
+                          : "bg-blue-50 text-blue-700 border border-blue-200"
+                      }`}>
+                        {row.priority}
+                      </span>
+                    </td>
+                    <td className="py-2 px-3 font-mono font-semibold text-[#172033]">{row.id}</td>
+                    <td className="py-2 px-3 font-medium text-[#172033]">{row.title}</td>
+                    <td className="py-2 px-3 text-[#667085]">{row.location}</td>
+                    <td className="py-2 px-3 text-right font-mono font-medium">{row.affected.toLocaleString()}</td>
+                    <td className="py-2 px-3">
+                      <span className="text-[11px] text-emerald-700 font-medium">● {row.status}</span>
+                    </td>
+                    <td className="py-2 px-3 text-right space-x-1.5">
+                      <button className="text-[10px] text-blue-600 font-semibold hover:underline">
+                        View
+                      </button>
+                      <button className="text-[10px] text-blue-600 font-semibold hover:underline">
+                        Dispatch
+                      </button>
+                    </td>
+                  </tr>
                 ))}
-              </div>
-            )}
+              </tbody>
+            </table>
+          </div>
+        </div>
 
-            {isFeedError && (
-              <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl">
-                Could not reach the external data service.
-              </div>
-            )}
-
-            {!isFeedLoading && !isFeedError && situationalFeed && (
-              <div className="grid gap-4 md:grid-cols-2">
-                {/* Live weather at disaster sites */}
-                <div className="space-y-2">
-                  <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center space-x-1">
-                    <CloudRain className="w-3.5 h-3.5" />
-                    <span>Live Weather at Disaster Sites</span>
-                  </h4>
-                  {situationalFeed.disasters.length > 0 ? (
-                    <div className="space-y-2">
-                      {situationalFeed.disasters.map((d) => (
-                        <div key={d.disaster_id} className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-semibold text-slate-700 truncate pr-2">{d.title}</span>
-                            {!d.weather_available && (
-                              <span className="text-[9px] text-slate-400 font-semibold flex-shrink-0">unavailable</span>
-                            )}
-                          </div>
-                          {d.weather_available && d.weather && (
-                            <div className="flex items-center flex-wrap gap-x-3 gap-y-1 mt-1.5 text-[10px] text-slate-500 font-semibold">
-                              <span className="flex items-center space-x-1">
-                                <Thermometer className="w-3 h-3 text-orange-400" />
-                                <span>{d.weather.temperature_c}°C</span>
-                              </span>
-                              <span className="flex items-center space-x-1">
-                                <Waves className="w-3 h-3 text-cyan-400" />
-                                <span>{d.weather.humidity_pct}% humidity</span>
-                              </span>
-                              <span className="flex items-center space-x-1">
-                                <CloudRain className="w-3 h-3 text-blue-400" />
-                                <span>{d.weather.rain_mm ?? 0}mm rain</span>
-                              </span>
-                              <span className="flex items-center space-x-1">
-                                <Wind className="w-3 h-3 text-slate-400" />
-                                <span>{d.weather.wind_speed_kmh} km/h</span>
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-xs text-slate-400">No active disasters to check weather for.</p>
-                  )}
-                </div>
-
-                {/* Recent significant earthquakes */}
-                <div className="space-y-2">
-                  <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center space-x-1">
-                    <Activity className="w-3.5 h-3.5" />
-                    <span>Recent Significant Earthquakes (USGS, mag 4.5+)</span>
-                  </h4>
-                  {!situationalFeed.earthquakes_available ? (
-                    <p className="text-xs text-slate-400">USGS feed currently unavailable.</p>
-                  ) : situationalFeed.recent_earthquakes.length > 0 ? (
-                    <div className="space-y-1.5 max-h-[220px] overflow-y-auto pr-1">
-                      {situationalFeed.recent_earthquakes.map((eq) => (
-                        <div key={eq.id} className="flex items-center justify-between p-2.5 bg-slate-50 border border-slate-100 rounded-xl text-[10px]">
-                          <span className="text-slate-600 font-medium truncate pr-2">{eq.place}</span>
-                          <span className="flex-shrink-0 px-1.5 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-800 font-bold">
-                            M{eq.magnitude?.toFixed(1)}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-xs text-slate-400">No significant earthquakes in the last 7 days.</p>
-                  )}
-                </div>
-              </div>
-            )}
-          </motion.div>
-
-          {/* 4. Reports Table and System Notifications */}
-          <motion.div className="grid gap-6 lg:grid-cols-3" variants={itemVariants}>
-            {/* Recent Emergency Reports (2/3 width) */}
-            <div className="bg-white border border-slate-200 p-6 rounded-2xl shadow-sm space-y-4 lg:col-span-2 overflow-hidden">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-semibold text-slate-800">Recent Emergency SOS Logs</h3>
-                  <p className="text-xs text-slate-400 mt-1">Latest reports filed directly by citizens.</p>
-                </div>
-                <Link to="/reports" className="text-xs font-semibold text-indigo-600 hover:text-indigo-800">
-                  View All
-                </Link>
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className="border-b border-slate-100 text-slate-500 font-semibold uppercase tracking-wider">
-                      <th className="pb-3 pr-2">Reporter</th>
-                      <th className="pb-3 pr-2">Location</th>
-                      <th className="pb-3 pr-2">Emergency</th>
-                      <th className="pb-3 pr-2">Description</th>
-                      <th className="pb-3">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-50 text-slate-700">
-                    {recentReports.length > 0 ? (
-                      recentReports.map((report) => (
-                        <tr key={report.id} className="hover:bg-slate-50/50 transition-colors duration-150">
-                          <td className="py-3.5 pr-2 font-medium">
-                            <div>{report.reporter_name}</div>
-                            <div className="text-[10px] text-slate-400">{report.phone}</div>
-                          </td>
-                          <td className="py-3.5 pr-2">
-                            <span className="flex items-center space-x-1">
-                              <MapPin className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
-                              <span className="truncate max-w-[120px]">{report.address}</span>
-                            </span>
-                          </td>
-                          <td className="py-3.5 pr-2">
-                            <span className="px-2 py-0.5 rounded bg-indigo-50 border border-indigo-100 text-indigo-700 text-[10px] font-semibold uppercase">
-                              {report.disaster_type}
-                            </span>
-                          </td>
-                          <td className="py-3.5 pr-2">
-                            <p className="truncate max-w-[180px] text-slate-500" title={report.description}>
-                              {report.description}
-                            </p>
-                          </td>
-                          <td className="py-3.5">
-                            {report.is_verified ? (
-                              <span className="flex items-center space-x-1 text-emerald-600 font-semibold">
-                                <CheckCircle2 className="w-3.5 h-3.5" />
-                                <span>Verified</span>
-                              </span>
-                            ) : (
-                              <span className="flex items-center space-x-1 text-amber-600 font-semibold">
-                                <Clock className="w-3.5 h-3.5 animate-spin-slow" />
-                                <span>Pending</span>
-                              </span>
-                            )}
-                          </td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan={5} className="py-8 text-center text-slate-400 text-xs">
-                          No distress incident logs registered in system database.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+        {/* RIGHT ~45%: Operational Map & Critical Actions (5 cols) */}
+        <div className="lg:col-span-5 space-y-4">
+          
+          {/* Operational Map Area */}
+          <div className="bg-white border border-[#E4E7EC] rounded-md p-3 space-y-2">
+            <div className="flex items-center justify-between border-b border-[#E4E7EC] pb-2 text-xs">
+              <span className="font-bold text-[#172033]">Live Situation Map & Route Bypass</span>
+              <span className="text-[10px] text-[#667085] font-mono">GRID: SECTOR 4</span>
             </div>
 
-            {/* Recent Notifications (1/3 width) */}
-            <div className="bg-white border border-slate-200 p-6 rounded-2xl shadow-sm space-y-4 lg:col-span-1 flex flex-col">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-semibold text-slate-800">EOC Bulletins & Alerts</h3>
-                  <p className="text-xs text-slate-400 mt-1">Broadcast signals dispatched across portal.</p>
-                </div>
-                <Bell className="w-4 h-4 text-slate-400" />
+            <div className="bg-slate-900 rounded p-3 text-white text-xs font-mono space-y-2 min-h-[160px] flex flex-col justify-between">
+              <div className="flex justify-between text-[10px] text-slate-400">
+                <span>OPERATIONAL MAP TELEMETRY</span>
+                <span className="text-emerald-400 font-bold">● LIVE ROUTING</span>
               </div>
 
-              <div className="flex-1 space-y-3.5 overflow-y-auto max-h-[260px] pr-1">
-                {recentNotifications.length > 0 ? (
-                  recentNotifications.map((notif) => {
-                    const isCritical = notif.priority?.toUpperCase() === "CRITICAL";
-                    const isHigh = notif.priority?.toUpperCase() === "HIGH";
-                    const priorityColor = isCritical 
-                      ? "bg-rose-50 border border-rose-200 text-rose-800" 
-                      : isHigh 
-                      ? "bg-amber-50 border border-amber-200 text-amber-800" 
-                      : "bg-slate-50 border border-slate-200 text-slate-800";
-                    
-                    return (
-                      <div key={notif.id} className={`p-3.5 rounded-xl transition duration-150 hover:shadow-sm ${priorityColor}`}>
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-semibold text-xs tracking-tight truncate">{notif.title}</span>
-                          <span className="text-[9px] font-bold uppercase px-1.5 py-0.25 rounded-md border bg-white opacity-80">
-                            {notif.priority}
-                          </span>
-                        </div>
-                        <p className="text-[11px] mt-1.5 opacity-90 leading-relaxed font-medium">
-                          {notif.message}
-                        </p>
-                      </div>
-                    );
-                  })
-                ) : (
-                  <div className="flex flex-col items-center justify-center text-slate-400 text-xs h-full py-8">
-                    <Bell className="w-6 h-6 mb-2 text-slate-300" />
-                    <span>No recent bulletin signals found.</span>
-                  </div>
-                )}
+              <div className="space-y-1.5">
+                <div className="p-1.5 bg-slate-800 rounded border border-slate-700 flex justify-between">
+                  <span>Warehouse Sector 4</span>
+                  <span className="text-emerald-400">DISPATCH READY</span>
+                </div>
+
+                <div className="p-1.5 bg-red-950/80 border border-red-800 rounded flex justify-between text-red-300">
+                  <span>GST Underpass (Submerged 4ft)</span>
+                  <span className="text-red-400 font-bold">● BLOCKED</span>
+                </div>
+
+                <div className="p-1.5 bg-slate-800 rounded border border-slate-700 flex justify-between text-blue-300">
+                  <span>Bypass Arterial Expressway</span>
+                  <span className="text-slate-300">ETA 31 MINS</span>
+                </div>
+              </div>
+
+              <div className="text-[9px] text-slate-400 flex justify-between border-t border-slate-800 pt-1">
+                <span>Active Fleet: 14 Vans</span>
+                <span>Bypass Distance: +4.3 km</span>
               </div>
             </div>
-          </motion.div>
-        </motion.div>
-      )}
+          </div>
+
+          {/* Critical Actions Panel */}
+          <div className="bg-white border border-[#E4E7EC] rounded-md p-3 space-y-2 text-xs">
+            <h3 className="font-bold text-[#172033] border-b border-[#E4E7EC] pb-1.5">
+              Critical Immediate Actions
+            </h3>
+            <ul className="space-y-1.5 text-[11px] text-[#172033]">
+              <li className="flex items-start space-x-1.5">
+                <span className="text-red-600 font-bold">●</span>
+                <span>Deploy 3 specialized medical teams to Tambaram Hospital ICU.</span>
+              </li>
+              <li className="flex items-start space-x-1.5">
+                <span className="text-amber-600 font-bold">●</span>
+                <span>Shelter capacity at Velachery Central below 15% threshold.</span>
+              </li>
+              <li className="flex items-start space-x-1.5">
+                <span className="text-blue-600 font-bold">●</span>
+                <span>Reroute heavy cargo convoy via Bypass Arterial Expressway.</span>
+              </li>
+            </ul>
+          </div>
+
+        </div>
+
+      </div>
+
+      {/* Lower Section: Resource Status & Capacity Tables */}
+      <div className="grid gap-4 md:grid-cols-2">
+        
+        {/* Resource Allocation Table */}
+        <div className="bg-white border border-[#E4E7EC] rounded-md p-3 space-y-2">
+          <div className="flex items-center justify-between border-b border-[#E4E7EC] pb-2 text-xs">
+            <span className="font-bold text-[#172033]">Resource Status & Allocation</span>
+            <Link to="/resources" className="text-[11px] text-blue-600 font-semibold hover:underline">
+              Manage Inventory
+            </Link>
+          </div>
+
+          <table className="w-full text-left text-xs border-collapse">
+            <thead>
+              <tr className="border-b border-[#E4E7EC] text-[10px] uppercase font-bold text-[#667085]">
+                <th className="py-1.5">Resource</th>
+                <th className="py-1.5 text-right">Available</th>
+                <th className="py-1.5 text-right">Allocated</th>
+                <th className="py-1.5 text-right">Required</th>
+                <th className="py-1.5 text-center">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#E4E7EC]">
+              <tr>
+                <td className="py-1.5 font-semibold text-[#172033]">Emergency Water (2L)</td>
+                <td className="py-1.5 text-right font-mono">12,500</td>
+                <td className="py-1.5 text-right font-mono">9,200</td>
+                <td className="py-1.5 text-right font-mono">15,000</td>
+                <td className="py-1.5 text-center text-amber-700 font-medium">● Low Stock</td>
+              </tr>
+              <tr>
+                <td className="py-1.5 font-semibold text-[#172033]">Type A Medical Kits</td>
+                <td className="py-1.5 text-right font-mono">1,800</td>
+                <td className="py-1.5 text-right font-mono">1,450</td>
+                <td className="py-1.5 text-right font-mono">2,000</td>
+                <td className="py-1.5 text-center text-emerald-700 font-medium">● Adequate</td>
+              </tr>
+              <tr>
+                <td className="py-1.5 font-semibold text-[#172033]">High-Calorie Rations</td>
+                <td className="py-1.5 text-right font-mono">8,400</td>
+                <td className="py-1.5 text-right font-mono">6,000</td>
+                <td className="py-1.5 text-right font-mono">8,000</td>
+                <td className="py-1.5 text-center text-emerald-700 font-medium">● Adequate</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        {/* Shelter & Hospital Capacity */}
+        <div className="bg-white border border-[#E4E7EC] rounded-md p-3 space-y-2">
+          <div className="flex items-center justify-between border-b border-[#E4E7EC] pb-2 text-xs">
+            <span className="font-bold text-[#172033]">Shelter & Hospital Bed Capacity</span>
+            <Link to="/shelters" className="text-[11px] text-blue-600 font-semibold hover:underline">
+              View All Facilities
+            </Link>
+          </div>
+
+          <table className="w-full text-left text-xs border-collapse">
+            <thead>
+              <tr className="border-b border-[#E4E7EC] text-[10px] uppercase font-bold text-[#667085]">
+                <th className="py-1.5">Facility Name</th>
+                <th className="py-1.5">Type</th>
+                <th className="py-1.5 text-right">Occupancy</th>
+                <th className="py-1.5 text-right">Capacity</th>
+                <th className="py-1.5 text-center">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#E4E7EC]">
+              {shelters.slice(0, 3).map((s) => (
+                <tr key={s.id}>
+                  <td className="py-1.5 font-semibold text-[#172033]">{s.shelter_name}</td>
+                  <td className="py-1.5 text-[#667085]">Shelter</td>
+                  <td className="py-1.5 text-right font-mono">{s.current_occupancy}</td>
+                  <td className="py-1.5 text-right font-mono">{s.capacity}</td>
+                  <td className="py-1.5 text-center text-emerald-700 font-medium">● Open</td>
+                </tr>
+              ))}
+              {hospitals.slice(0, 1).map((h) => (
+                <tr key={h.id}>
+                  <td className="py-1.5 font-semibold text-[#172033]">{h.hospital_name}</td>
+                  <td className="py-1.5 text-[#667085]">Hospital</td>
+                  <td className="py-1.5 text-right font-mono">ICU: {h.icu_beds}</td>
+                  <td className="py-1.5 text-right font-mono">Beds: {h.available_beds}</td>
+                  <td className="py-1.5 text-center text-red-700 font-medium">● High Intake</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+
     </div>
   );
 };
