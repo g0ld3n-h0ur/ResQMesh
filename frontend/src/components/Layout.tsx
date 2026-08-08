@@ -15,37 +15,28 @@ export const Layout: React.FC = () => {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-slate-300">
-        <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4" />
-        <p className="text-xs uppercase font-bold tracking-widest text-slate-400">
-          Connecting to ResQMesh Command Center...
+      <div className="min-h-screen bg-[#F7F8FA] flex flex-col items-center justify-center text-[#172033]">
+        <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mb-3" />
+        <p className="text-xs font-semibold text-[#667085]">
+          Initializing Operational Environment...
         </p>
       </div>
     );
   }
 
-  // Redirect to login if user is not authenticated and trying to access protected routes
   if (!isAuthenticated && location.pathname !== "/login") {
     return <Navigate to="/login" replace />;
   }
 
-  const toggleSidebar = () => {
-    setIsSidebarOpen(!isSidebarOpen);
-  };
-
-  const closeSidebar = () => {
-    setIsSidebarOpen(false);
-  };
-
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-50 font-sans">
-      <Sidebar isOpen={isSidebarOpen} onClose={closeSidebar} />
+    <div className="flex h-screen overflow-hidden bg-[#F7F8FA] font-sans text-[#172033]">
+      <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
 
       <div className="flex flex-col flex-1 overflow-hidden">
-        <Navbar onMenuToggle={toggleSidebar} />
+        <Navbar onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
 
-        <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
-          <div className="max-w-7xl mx-auto space-y-6">
+        <main className="flex-1 overflow-y-auto p-4 md:p-5">
+          <div className="max-w-7xl mx-auto space-y-4">
             <Outlet />
           </div>
         </main>
