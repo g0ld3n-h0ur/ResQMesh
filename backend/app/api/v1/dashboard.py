@@ -198,3 +198,25 @@ async def get_hospitals(
         data=data,
         message="Hospital capacity summary retrieved successfully.",
     )
+
+
+@router.get(
+    "/shelters",
+    summary="Shelter capacity fleet summary",
+    description="Return recent active shelter records for the dashboard overview.",
+)
+async def get_shelters(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: RequireGovernment,
+    limit: int = Query(
+        10,
+        ge=1,
+        le=50,
+        description="Maximum number of shelter records to return (1–50).",
+    ),
+) -> Any:
+    data = dashboard_service.get_shelters_snapshot(db=db, limit=limit)
+    return success_response(
+        data=data,
+        message="Shelter summary retrieved successfully.",
+    )

@@ -466,3 +466,30 @@ def get_hospitals_snapshot(db: Session, limit: int = 10) -> dict[str, Any]:
         },
         "hospitals": hospitals_list,
     }
+
+
+def get_shelters_snapshot(db: Session, limit: int = 10) -> list[dict[str, Any]]:
+    """
+    Return recent active shelter records for dashboard overview.
+    """
+    limit = min(limit, 50)
+    shelters = db.execute(
+        select(Shelter)
+        .where(Shelter.is_deleted.is_(False))
+        .order_by(Shelter.created_at.desc())
+        .limit(limit)
+    ).scalars().all()
+
+    return [
+        {
+            "id": str(s.id),
+            "shelter_name": s.shelter_name,
+            "capacity": s.capacity,
+            "current_occupancy": s.current_occupancy,
+            "district": getattr(s, "district", "Chennai"),
+            "state": getattr(s, "state", "Tamil Nadu"),
+            "latitude": s.latitude,
+            "longitude": s.longitude,
+        }
+        for s in shelters
+    ]
